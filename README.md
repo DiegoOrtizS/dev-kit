@@ -138,7 +138,8 @@ Copy what the repository needs, then adapt the body of each agent to the repo's 
 
 - shims in `tools/claude-hooks/` that differ from `shim/` (line endings ignored);
 - agents whose `model`, `effort`, `maxTurns` or `tools` differ from the template with the same name. A deliberate difference goes in `.claude/guard.json` as `"syncCheck": { "agentOverrides": { "<agent>": ["model"] } }`;
-- a `CLAUDE.md` (root or `.claude/`) whose first two sections are not the limits ("Never" or "Prohibido") and "Where to write" ("Dónde se escribe").
+- agents listed in `"syncCheck": { "requiredAgents": [...] }` that are missing. Only agents that exist in both places, or are required, are checked; a repository may skip roles it does not need;
+- a `CLAUDE.md` (root and `.claude/`, each one present) whose first two sections, outside code blocks, are not the limits and "Where to write". Spanish headings ("Prohibido", "Dónde se escribe") are accepted for repositories documented in Spanish.
 
 When a lesson in one repository applies to all of them, fix it here (template, guard or pattern) and bump the tag in every consumer, instead of repeating it in each `lessons.md`.
 

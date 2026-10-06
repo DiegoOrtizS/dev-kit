@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { POLICY_FIELDS } from "./guardrails/sync-check.mjs";
 
 export const CONFIG_PATH = ".claude/guard.json";
 
@@ -101,16 +102,23 @@ function normalizeWorktrees(worktrees = {}) {
   return { base: worktrees.base ?? "origin/main" };
 }
 
+const AGENT_NAME = /^[a-z][a-z0-9-]*$/;
+
 function normalizeSyncCheck(syncCheck = {}) {
-  requireObject(syncCheck, "syncCheck", ["agentOverrides"]);
+  requireObject(syncCheck, "syncCheck", ["agentOverrides", "requiredAgents"]);
   const overrides = syncCheck.agentOverrides ?? {};
   requireObject(overrides, "syncCheck.agentOverrides", Object.keys(overrides));
   for (const [agent, fields] of Object.entries(overrides)) {
-    if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string")) {
-      fail(`syncCheck.agentOverrides.${agent} must be a list of field names`);
+    if (!AGENT_NAME.test(agent)) fail(`syncCheck.agentOverrides has an invalid agent name: ${agent}`);
+    if (!Array.isArray(fields) || fields.some((field) => !POLICY_FIELDS.includes(field))) {
+      fail(`syncCheck.agentOverrides.${agent} must list fields from: ${POLICY_FIELDS.join(", ")}`);
     }
   }
-  return { agentOverrides: overrides };
+  const requiredAgents = syncCheck.requiredAgents ?? [];
+  if (!Array.isArray(requiredAgents) || requiredAgents.some((agent) => !AGENT_NAME.test(String(agent)))) {
+    fail("syncCheck.requiredAgents must be a list of agent names");
+  }
+  return { agentOverrides: overrides, requiredAgents };
 }
 
 export function normalizeConfig(raw = {}) {

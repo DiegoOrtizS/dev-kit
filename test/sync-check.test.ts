@@ -87,7 +87,7 @@ describe("checkAgents", () => {
 
   it("skips fields listed as deliberate overrides", () => {
     write(".claude/agents/mechanic.md", template("mechanic").replace("model: sonnet", "model: haiku"));
-    expect(checkAgents(repo, { mechanic: ["model"] })).toEqual([]);
+    expect(checkAgents(repo, { agentOverrides: { mechanic: ["model"] } })).toEqual([]);
   });
 
   it("ignores agents that have no template", () => {
@@ -132,5 +132,38 @@ describe("parseFrontmatter", () => {
 
   it("returns nothing without frontmatter", () => {
     expect(parseFrontmatter("# title")).toEqual({});
+  });
+});
+
+describe("sync-check review cases", () => {
+  it("reads quoted values and drops trailing comments", () => {
+    expect(parseFrontmatter("---\nmodel: \"sonnet\"\neffort: 'low'\nmaxTurns: 15 # cap\n---\n")).toEqual({
+      model: "sonnet",
+      effort: "low",
+      maxTurns: "15",
+    });
+  });
+
+  it("does not take a longer dash line as the closing delimiter", () => {
+    expect(parseFrontmatter("---\nmodel: a\n----\nmore: b\n---\n")).toEqual({ model: "a", more: "b" });
+  });
+
+  it("reports required agents that are missing", () => {
+    write(".claude/agents/mechanic.md", template("mechanic"));
+    expect(checkAgents(repo, { requiredAgents: ["code-reviewer", "mechanic"] })).toEqual([
+      ".claude/agents/code-reviewer.md: required by guard.json syncCheck.requiredAgents but missing",
+    ]);
+  });
+
+  it("ignores headings inside fenced code blocks", () => {
+    write("CLAUDE.md", "# x\n\n```md\n## Never\n## Where to write\n```\n\n## Stack\n");
+    expect(checkClaudeMd(repo)).toHaveLength(2);
+  });
+
+  it("checks both CLAUDE.md files when both exist", () => {
+    write("CLAUDE.md", "# x\n\n## Never\n\n## Where to write\n");
+    write(".claude/CLAUDE.md", "# x\n\n## Stack\n");
+    expect(checkClaudeMd(repo).every((problem) => problem.startsWith(".claude/CLAUDE.md"))).toBe(true);
+    expect(checkClaudeMd(repo)).toHaveLength(2);
   });
 });
