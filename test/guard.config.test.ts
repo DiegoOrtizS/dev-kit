@@ -82,8 +82,8 @@ describe("blocked paths from config", () => {
 });
 
 describe("written secrets from the Python bot", () => {
-  const card = ["4111", "1111", "1111", "1234"].join(" ");
-  const webhook = ["https://discord", ".com/api/webhooks/", "1/abc"].join("");
+  const card = ["4532", "0151", "1283", "0366"].join(" ");
+  const webhook = ["https://discord", ".com/api/webhooks/", "1".repeat(18), "/", "aB3_-".repeat(14)].join("");
 
   it.each([
     ["a card number", card],

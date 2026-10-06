@@ -61,6 +61,12 @@ describe("scan-secrets --all", () => {
     expect(result.stdout).toContain("a.txt:1");
   });
 
+  it("skips binary files such as PDFs", () => {
+    writeFileSync(path.join(repo, "doc.pdf"), Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(githubToken)]));
+    git("add", "doc.pdf");
+    expect(scanAll().status).toBe(0);
+  });
+
   it("skips tracked files that are missing from the working tree", () => {
     mkdirSync(path.join(repo, "dir"));
     writeFileSync(path.join(repo, "dir", "gone.txt"), "hello\n");

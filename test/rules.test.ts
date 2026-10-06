@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSecrets, isAllowedOnBranch } from "../src/guardrails/rules.mjs";
+import { findSecrets, isAllowedOnBranch, passesLuhn } from "../src/guardrails/rules.mjs";
 
 const sample = (...parts: string[]) => parts.join("");
 
@@ -56,13 +56,22 @@ describe("isAllowedOnBranch", () => {
   });
 });
 
+function withCheckDigit(prefix: string) {
+  const digit = [...Array(10).keys()].find((candidate) => passesLuhn(`${prefix}${candidate}`));
+  return `${prefix}${digit}`;
+}
+
+const card = withCheckDigit(sample("4532015", "11283036"));
+const grouped = (digits: string, separator: string) => digits.match(/.{4}/g)?.join(separator) ?? digits;
+const webhook = (host: string) => sample("https://", host, "/api/webhooks/", "1".repeat(18), "/", "aB3_-".repeat(14));
+
 describe("findSecrets from the Python bot", () => {
   it.each([
-    ["discord webhook", sample("https://discord", ".com/api/webhooks/", "123456789/abcDEF_-123")],
-    ["legacy discord webhook", sample("https://discord", "app.com/api/webhooks/", "123456789/abcDEF")],
-    ["card number with spaces", sample("4111 ", "1111 ", "1111 ", "1234")],
-    ["card number with dashes", sample("5500-", "0000-", "0000-", "0004")],
-    ["card number without separators", sample("41111111", "11111234")],
+    ["discord webhook", webhook("discord.com")],
+    ["legacy discord webhook", webhook("discordapp.com")],
+    ["card number with spaces", grouped(card, " ")],
+    ["card number with dashes", grouped(card, "-")],
+    ["card number without separators", card],
     ["postgres url with a password", sample("postgres://user:", "hunter2@db.example.com/app")],
   ])("detects a %s", (_label, text) => {
     expect(findSecrets(`value = "${text}"`)).toHaveLength(1);
@@ -72,10 +81,18 @@ describe("findSecrets from the Python bot", () => {
     ["a repeated-digit placeholder", sample("0000000000", "000000")],
     ["a 13-digit timestamp", "1759700000000"],
     ["a decimal number", sample("1234567890", "123456.5")],
-    ["an identifier with digits", sample("sku-41111111", "11111234")],
+    ["an identifier with digits", `sku-${card}`],
     ["a local postgres url", sample("postgres://postgres:", "postgres@localhost:5432/test")],
+    ["a public test card", sample("4111 1111 ", "1111 1111")],
+    ["another public test card", sample("5500-0000-", "0000-0004")],
+    ["a digit run that fails Luhn", sample("12345678", "90123456")],
+    ["a fake webhook in a test", sample("https://discord", ".com/api/webhooks/", "1/general-token")],
   ])("ignores %s", (_label, text) => {
     expect(findSecrets(`value = "${text}"`)).toEqual([]);
+  });
+
+  it("checks every card-like run on a line", () => {
+    expect(findSecrets(`a = "${sample("4111 1111 ", "1111 1111")}"; b = "${card}"`)).toHaveLength(1);
   });
 });
 

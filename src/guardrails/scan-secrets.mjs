@@ -4,6 +4,7 @@ import { addedLines, parseNameList } from "./git-parse.mjs";
 import { findSecrets } from "./rules.mjs";
 
 const MAX_BUFFER = 256 * 1024 * 1024;
+const BINARY_SNIFF_BYTES = 8000;
 
 function git(...args) {
   return execFileSync("git", ["-c", "core.quotePath=false", ...args], { encoding: "utf8", maxBuffer: MAX_BUFFER });
@@ -23,13 +24,18 @@ function stagedFindings(config) {
   return [...blockedPathFindings(staged, config), ...contentFindings];
 }
 
+function isBinary(buffer) {
+  return buffer.subarray(0, BINARY_SNIFF_BYTES).includes(0);
+}
+
 function trackedFindings(config) {
   const tracked = parseNameList(git("ls-files", "-z"));
   const contentFindings = tracked
     .filter((path) => !config.secretScan.skipFiles.has(path) && existsSync(path))
     .flatMap((path) => {
-      const text = readFileSync(path, "utf8");
-      return findSecrets(text).map(({ rule, line }) => ({ path, line, rule }));
+      const buffer = readFileSync(path);
+      if (isBinary(buffer)) return [];
+      return findSecrets(buffer.toString("utf8")).map(({ rule, line }) => ({ path, line, rule }));
     });
   return [...blockedPathFindings(tracked, config), ...contentFindings];
 }
