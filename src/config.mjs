@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { POLICY_FIELDS } from "./guardrails/sync-check.mjs";
 
 export const CONFIG_PATH = ".claude/guard.json";
 
@@ -10,7 +11,7 @@ const DEFAULT_CHECKS = [
   ["test", "pnpm test"],
 ];
 
-const TOP_LEVEL_KEYS = ["protectedBranches", "blockedPaths", "secretScan", "lint", "checks", "worktrees"];
+const TOP_LEVEL_KEYS = ["protectedBranches", "blockedPaths", "secretScan", "lint", "checks", "worktrees", "syncCheck"];
 const BRANCH_KEYS = ["allowedPaths", "allowMerges", "blockAgentPush"];
 const BLOCKED_PATH_KEYS = ["read", "write", "commit"];
 const ALWAYS_PROTECTED = "main";
@@ -101,6 +102,25 @@ function normalizeWorktrees(worktrees = {}) {
   return { base: worktrees.base ?? "origin/main" };
 }
 
+const AGENT_NAME = /^[a-z][a-z0-9-]*$/;
+
+function normalizeSyncCheck(syncCheck = {}) {
+  requireObject(syncCheck, "syncCheck", ["agentOverrides", "requiredAgents"]);
+  const overrides = syncCheck.agentOverrides ?? {};
+  requireObject(overrides, "syncCheck.agentOverrides", Object.keys(overrides));
+  for (const [agent, fields] of Object.entries(overrides)) {
+    if (!AGENT_NAME.test(agent)) fail(`syncCheck.agentOverrides has an invalid agent name: ${agent}`);
+    if (!Array.isArray(fields) || fields.some((field) => !POLICY_FIELDS.includes(field))) {
+      fail(`syncCheck.agentOverrides.${agent} must list fields from: ${POLICY_FIELDS.join(", ")}`);
+    }
+  }
+  const requiredAgents = syncCheck.requiredAgents ?? [];
+  if (!Array.isArray(requiredAgents) || requiredAgents.some((agent) => !AGENT_NAME.test(String(agent)))) {
+    fail("syncCheck.requiredAgents must be a list of agent names");
+  }
+  return { agentOverrides: overrides, requiredAgents };
+}
+
 export function normalizeConfig(raw = {}) {
   requireObject(raw, "the config", TOP_LEVEL_KEYS);
   return {
@@ -110,6 +130,7 @@ export function normalizeConfig(raw = {}) {
     lint: normalizeLint(raw.lint),
     checks: normalizeChecks(raw.checks),
     worktrees: normalizeWorktrees(raw.worktrees),
+    syncCheck: normalizeSyncCheck(raw.syncCheck),
   };
 }
 

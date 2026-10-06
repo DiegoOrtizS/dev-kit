@@ -90,3 +90,22 @@ describe("normalizeConfig", () => {
     expect(config.protectedBranches.develop?.blockAgentPush).toBe(false);
   });
 });
+
+describe("syncCheck config", () => {
+  it.each([
+    [{ syncCheck: { agentOverrides: { mechanic: ["modle"] } } }],
+    [{ syncCheck: { agentOverrides: { "Bad Name": ["model"] } } }],
+    [{ syncCheck: { agentOverrides: { mechanic: "model" } } }],
+    [{ syncCheck: { requiredAgents: "code-reviewer" } }],
+    [{ syncCheck: { requiredAgent: ["code-reviewer"] } }],
+  ])("rejects %j", (raw) => {
+    expect(() => normalizeConfig(raw)).toThrow(/guard\.json/);
+  });
+
+  it("accepts overrides and required agents", () => {
+    const config = normalizeConfig({
+      syncCheck: { agentOverrides: { "security-auditor": ["tools"] }, requiredAgents: ["code-reviewer"] },
+    });
+    expect(config.syncCheck.requiredAgents).toEqual(["code-reviewer"]);
+  });
+});

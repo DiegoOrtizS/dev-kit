@@ -1,6 +1,6 @@
 {
   "name": "dev-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agent guard, git guardrails and lint rules shared by my personal repositories",
   "type": "module",
   "packageManager": "pnpm@12.9.1",
@@ -20,12 +20,14 @@
     "./config": "./src/config.mjs",
     "./secrets": "./src/guardrails/rules.mjs",
     "./eslint": "./src/eslint/index.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./templates/*": "./templates/*"
   },
   "files": [
     "bin",
     "src",
-    "shim"
+    "shim",
+    "templates"
   ],
   "scripts": {
     "lint": "eslint . --max-warnings=0",

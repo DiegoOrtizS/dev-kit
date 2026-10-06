@@ -6,20 +6,20 @@ The guard is how an agent holds itself back. It is **not a security boundary**: 
 
 ## What is inside
 
-| Piece                                                      | Entry                                            | Used by                                     |
-| ---------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------- |
-| Claude Code `PreToolUse` guard                             | `dev-kit/guard` (`runGuard`, `evaluateToolCall`) | any repo, any language                      |
-| Claude Code `PostToolUse` lint                             | `dev-kit/lint-after-edit` (`runLintAfterEdit`)   | any repo; the linter is configured per repo |
-| Secret scan, branch policy, quiet checks, worktree cleanup | `dev-kit` bin                                    | any repo with git and Node                  |
-| `no-comments` ESLint rule                                  | `dev-kit/eslint`                                 | TypeScript repos (ESLint 9 or 10)           |
-| Secret patterns                                            | `dev-kit/secrets`                                | anything that wants the same list           |
+| Piece                                                                  | Entry                                            | Used by                                     |
+| ---------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------- |
+| Claude Code `PreToolUse` guard                                         | `dev-kit/guard` (`runGuard`, `evaluateToolCall`) | any repo, any language                      |
+| Claude Code `PostToolUse` lint                                         | `dev-kit/lint-after-edit` (`runLintAfterEdit`)   | any repo; the linter is configured per repo |
+| Secret scan, branch policy, quiet checks, worktree cleanup, sync check | `dev-kit` bin                                    | any repo with git and Node                  |
+| `no-comments` ESLint rule                                              | `dev-kit/eslint`                                 | TypeScript repos (ESLint 9 or 10)           |
+| Secret patterns                                                        | `dev-kit/secrets`                                | anything that wants the same list           |
 
 The package exports runnable tools and configuration, not domain libraries. A Python repo uses it only as dev tooling and never imports it at runtime.
 
 ## Install
 
 ```sh
-pnpm add -D --save-exact github:DiegoOrtizS/dev-kit#v0.1.0
+pnpm add -D --save-exact github:DiegoOrtizS/dev-kit#v0.2.0
 ```
 
 Pin a tag. Dependabot does not update git dependencies, so a kit upgrade is a manual PR in each consumer that bumps the tag.
@@ -119,9 +119,29 @@ dev-kit scan-secrets --staged | --all
 dev-kit check-branch --staged | --pre-push [remote]
 dev-kit check-quiet [step ...]
 dev-kit worktrees-clean [--apply]
+dev-kit sync-check
 ```
 
 From a git hook, call the bin through Node (`node node_modules/dev-kit/bin/dev-kit.mjs ...`) when `pnpm` might not be on the path, for example in a Python repository.
+
+## Templates and sync-check
+
+`templates/` holds the starting point for a new repository:
+
+- a `CLAUDE.md` skeleton, with the limits ("Never", then "Where to write") ahead of everything that encourages the agent;
+- the agent roles in `templates/agents/` (architect, code-reviewer, implementer, ui-implementer, test-engineer, mechanic, researcher, qa-tester, perf-auditor, security-auditor, legal-reviewer, copy-reviewer);
+- a `lessons.md` header.
+
+Copy what the repository needs, then adapt the body of each agent to the repo's language, stack and checklist. The body may differ between repositories; the policy should not.
+
+`dev-kit sync-check` runs in each consumer's CI and fails on:
+
+- shims in `tools/claude-hooks/` that differ from `shim/` (line endings ignored);
+- agents whose `model`, `effort`, `maxTurns` or `tools` differ from the template with the same name. A deliberate difference goes in `.claude/guard.json` as `"syncCheck": { "agentOverrides": { "<agent>": ["model"] } }`;
+- agents listed in `"syncCheck": { "requiredAgents": [...] }` that are missing. Only agents that exist in both places, or are required, are checked; a repository may skip roles it does not need;
+- a `CLAUDE.md` (root and `.claude/`, each one present) whose first two sections, outside code blocks, are not the limits and "Where to write". Spanish headings ("Prohibido", "Dónde se escribe") are accepted for repositories documented in Spanish.
+
+When a lesson in one repository applies to all of them, fix it here (template, guard or pattern) and bump the tag in every consumer, instead of repeating it in each `lessons.md`.
 
 ## ESLint
 
