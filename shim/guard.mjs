@@ -17,12 +17,21 @@ function allowsBootstrap() {
   }
 }
 
+function block(message) {
+  process.stderr.write(`Blocked: ${message}\n`);
+  process.exit(2);
+}
+
 let guard;
 try {
   guard = await import("dev-kit/guard");
 } catch {
   if (allowsBootstrap()) process.exit(0);
-  process.stderr.write("Blocked: dev-kit is not installed, so the guard cannot run. Run pnpm install first.\n");
-  process.exit(2);
+  block("dev-kit is not installed, so the guard cannot run. Run pnpm install first.");
 }
-guard.runGuard({ repoRoot });
+if (typeof guard.runGuard !== "function") block("the installed dev-kit has no runGuard. Reinstall it.");
+try {
+  guard.runGuard({ repoRoot });
+} catch (error) {
+  block(`the guard failed (${error instanceof Error ? error.message : "unknown error"}).`);
+}

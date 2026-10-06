@@ -60,10 +60,14 @@ function checkStaged(config) {
 }
 
 function checkPrePush(config, remoteName, stdin) {
-  for (const { localSha, remoteRef, remoteSha } of parsePrePush(stdin)) {
+  for (const { localRef, localSha, remoteRef, remoteSha } of parsePrePush(stdin)) {
     const branch = remoteRef?.startsWith(HEADS) ? remoteRef.slice(HEADS.length) : null;
     const rules = branch === null ? undefined : config.protectedBranches[branch];
-    if (!rules || rules.allowMerges || ZERO_SHA.test(localSha)) continue;
+    if (!rules || ZERO_SHA.test(localSha)) continue;
+    if (rules.allowMerges) {
+      if (localRef !== remoteRef) stop(`Push ${branch} only from the local ${branch} branch.`);
+      continue;
+    }
     const base = ZERO_SHA.test(remoteSha) ? `${remoteName}/${branch}` : remoteSha;
     requireCommit(base, branch);
     requireCommit(localSha, branch);

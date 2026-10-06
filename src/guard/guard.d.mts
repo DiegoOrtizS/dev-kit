@@ -8,6 +8,7 @@ export interface ToolCall {
 
 export interface Verdict {
   block: boolean;
+  ask?: boolean;
   reason?: string;
 }
 

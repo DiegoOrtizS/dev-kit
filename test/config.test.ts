@@ -60,7 +60,33 @@ describe("normalizeConfig", () => {
     [{ protectedBranches: { main: { allowedPaths: [1] } } }],
     [{ lint: [{ match: "\\.py$" }] }],
     [{ lint: {} }],
+    [{ protectedBranches: ["main", "develop"] }],
+    [{ protectedBranches: { develop: ["^docs/"] } }],
+    [{ protectedBranches: { main: { allowMerge: true } } }],
+    [{ protectedBranches: { main: { blockAgentPush: "no" } } }],
+    [{ blockedPaths: ["^state/"] }],
+    [{ blockedPaths: "^state/" }],
+    [{ blockedPaths: { reads: ["^state/"] } }],
+    [{ blockedpaths: { read: ["^state/"] } }],
+    [{ checks: [["test"]] }],
+    [{ worktrees: { base: 1 } }],
+    [{ secretScan: { skipFiles: "pnpm-lock.yaml" } }],
+    [[]],
+    [null],
   ])("rejects a malformed config %#", (raw) => {
     expect(() => normalizeConfig(raw)).toThrow(/guard\.json/);
+  });
+
+  it.each([
+    [{}],
+    [{ protectedBranches: { develop: {} } }],
+    [{ protectedBranches: { main: { blockAgentPush: false } } }],
+  ])("always keeps agent pushes to main blocked %#", (raw) => {
+    expect(normalizeConfig(raw).protectedBranches.main?.blockAgentPush).toBe(true);
+  });
+
+  it("lets other branches opt out of the push block", () => {
+    const config = normalizeConfig({ protectedBranches: { develop: { blockAgentPush: false } } });
+    expect(config.protectedBranches.develop?.blockAgentPush).toBe(false);
   });
 });

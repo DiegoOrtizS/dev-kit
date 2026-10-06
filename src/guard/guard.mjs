@@ -4,11 +4,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
 import { findSecrets } from "../guardrails/rules.mjs";
 import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
-import { checkFileAccess, matchesBlockedPath } from "./env-files.mjs";
+import { OWN_LIMITS_ASK, checkFileAccess, matchesBlockedPath, touchesOwnLimits } from "./env-files.mjs";
 import { checkGh } from "./gh.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
 import { asAssignment, splitSegments, stripPrefixes } from "./segments.mjs";
+import { checkSst } from "./sst.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell"]);
@@ -40,6 +41,7 @@ function checkWords(words, context) {
     name === "git" ? checkGit(args, context) : ALLOW,
     name === "gh" ? checkGh(args) : ALLOW,
     name === "find" ? checkFindExec(args, context) : ALLOW,
+    checkSst(rest),
     checkFileAccess(name, args, context),
     REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context) : ALLOW,
   ]);
@@ -85,6 +87,7 @@ function checkFilePath(toolName, input, context) {
   if (toolName === "Read" && matchesBlockedPath(path, blockedPaths.read, context)) {
     return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
   }
+  if (WRITE_TOOLS.has(toolName) && touchesOwnLimits(path, context)) return OWN_LIMITS_ASK;
   return ALLOW;
 }
 
@@ -150,6 +153,17 @@ export function runGuard({ repoRoot }) {
   if (verdict.block) {
     process.stderr.write(`${verdict.reason}\n`);
     process.exit(2);
+  }
+  if (verdict.ask) {
+    process.stdout.write(
+      `${JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "ask",
+          permissionDecisionReason: verdict.reason,
+        },
+      })}\n`,
+    );
   }
 }
 

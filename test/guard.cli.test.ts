@@ -77,3 +77,12 @@ describe(".claude/settings.json wiring", () => {
     expect(command).toContain("src/hooks/lint-after-edit.mjs");
   });
 });
+
+describe("guard CLI ask decisions", () => {
+  it("asks the user before an edit to the guard config", () => {
+    const result = runGuard(call("Write", { file_path: ".claude/guard.json", content: "{}" }));
+    expect(result.status).toBe(0);
+    const output = JSON.parse(result.stdout) as { hookSpecificOutput: { permissionDecision: string } };
+    expect(output.hookSpecificOutput.permissionDecision).toBe("ask");
+  });
+});

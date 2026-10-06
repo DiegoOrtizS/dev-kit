@@ -118,4 +118,14 @@ describe("check-branch --pre-push", () => {
     const zero = "0".repeat(40);
     expect(checkBranch("--pre-push", `refs/heads/feat/x ${head} refs/heads/feat/x ${zero}\n`).status).toBe(0);
   });
+
+  it("on a merge branch, only accepts a push from the local branch of the same name", () => {
+    configure({ protectedBranches: { main: { allowMerges: true }, develop: { allowMerges: true } } });
+    const head = git("rev-parse", "HEAD");
+    const zero = "0".repeat(40);
+    const fromFeature = checkBranch("--pre-push", `refs/heads/feature/x ${head} refs/heads/develop ${zero}\n`);
+    expect(fromFeature.status).toBe(1);
+    expect(fromFeature.stderr).toContain("only from the local develop");
+    expect(checkBranch("--pre-push", `refs/heads/develop ${head} refs/heads/develop ${zero}\n`).status).toBe(0);
+  });
 });

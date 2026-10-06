@@ -40,7 +40,7 @@ function protectedPaths(repoRoot) {
   ]);
 }
 
-function expandHome(target) {
+export function expandHome(target) {
   return target.replace(
     /^(~|\$HOME|\$\{HOME\}|\$USERPROFILE|\$env:USERPROFILE|\$env:HOME|%USERPROFILE%)(?=[\\/]|$)/i,
     HOME,

@@ -18,6 +18,11 @@ describe("evaluateToolCall", () => {
     "gh repo delete owner/repo",
     "cat .env",
     "rm -rf /",
+    "pnpm sst remove --stage production",
+    "npx sst deploy --stage production",
+    "pnpm exec sst remove --stage=production",
+    "sst deploy --stage production",
+    "npx sst deploy --stage production --verbose",
   ])("blocks %s", (command) => {
     expect(bash(command).block).toBe(true);
   });
@@ -28,6 +33,9 @@ describe("evaluateToolCall", () => {
     "gh pr create --draft",
     "pnpm check",
     "git commit -m 'feat: x'",
+    "pnpm sst diff --stage dev",
+    "pnpm sst deploy --stage dev",
+    "npx sst remove --stage dev",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
   });

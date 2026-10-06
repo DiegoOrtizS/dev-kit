@@ -104,9 +104,13 @@ Everything that differs between repositories lives in `.claude/guard.json`. Ever
 | `checks`              | format, lint, typecheck, test via pnpm           | Steps for `dev-kit check-quiet`.                                                                                                                                                     |
 | `worktrees.base`      | `origin/main`                                    | Branch that `worktrees-clean` treats as merged.                                                                                                                                      |
 
-The guard always blocks these, whatever the config says: force pushes, `--all`/`--mirror` pushes, skipped or redirected hooks, `git reset --hard`, `git clean -f`, reading `.env` files, `gh auth login|refresh|token`, `gh repo delete`, mutating `gh api` calls on the repository, recursive deletes of the repository, the home folder or a drive, and writing text that looks like a secret.
+The config can only tighten `main`: it is always protected and agent pushes to it are always blocked. A config with the wrong shape or an unknown key is an error, and the guard then blocks every call until it is fixed. A typo never turns protection off silently. On Windows, paths are compared case-insensitively and Git Bash (`/c/...`) and `~` forms are resolved.
 
-Treat `.claude/guard.json` like `.claude/settings.json`: changes need the repo owner's approval.
+The guard always blocks these, whatever the config says: force pushes, `--all`/`--mirror` pushes, skipped or redirected hooks, `git reset --hard`, `git clean -f`, reading `.env` files, `gh auth login|refresh|token`, `gh repo delete`, mutating `gh api` calls on the repository, `sst deploy|remove` against the production stage, recursive deletes of the repository, the home folder or a drive, and writing text that looks like a secret.
+
+Edits to the agent's own limits (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/guard.json`, `tools/claude-hooks/`) through Write/Edit or `cp`/`mv` return an `ask` decision, so Claude Code prompts the user even when the call would otherwise be allowed.
+
+Secret patterns aim for few false positives. A card number must pass Luhn and must not be a public test card. A Discord webhook needs a snowflake ID and a full-length token. Binary files are skipped.
 
 ## CLI
 

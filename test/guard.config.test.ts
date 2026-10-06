@@ -92,3 +92,28 @@ describe("written secrets from the Python bot", () => {
     expect(run("Write", { file_path: `${repoRoot}/bot/x.py`, content: `VALUE = "${text}"` }).block).toBe(true);
   });
 });
+
+describe("own limits", () => {
+  it.each([
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    ".claude/guard.json",
+    "tools/claude-hooks/guard.mjs",
+  ])("asks before writing %s", (file) => {
+    const verdict = run("Write", { file_path: `${repoRoot}/${file}`, content: "{}" });
+    expect(verdict.block).toBe(false);
+    expect(verdict.ask).toBe(true);
+  });
+
+  it("asks before copying over a limits file", () => {
+    expect(bash("cp /tmp/x.json .claude/guard.json").ask).toBe(true);
+  });
+
+  it("does not ask for ordinary files under .claude", () => {
+    expect(run("Write", { file_path: `${repoRoot}/.claude/agents/x.md`, content: "x" }).ask).toBeUndefined();
+  });
+
+  it("still blocks when another part of the call is blocked", () => {
+    expect(bash("cp x .claude/guard.json && git push origin main").block).toBe(true);
+  });
+});

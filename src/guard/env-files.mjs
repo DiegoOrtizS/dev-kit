@@ -1,5 +1,6 @@
-import { basename, isAbsolute, relative, resolve } from "node:path";
-import { ALLOW, deny } from "./verdict.mjs";
+import { basename, posix } from "node:path";
+import { expandHome } from "./remove.mjs";
+import { ALLOW, ask, deny } from "./verdict.mjs";
 
 const FILE_READERS = new Set([
   "cat",
@@ -26,9 +27,11 @@ const FILE_READERS = new Set([
   "select-string",
   "sls",
 ]);
-const FILE_MOVERS = new Set(["cp", "mv"]);
+const FILE_MOVERS = new Set(["cp", "mv", "copy-item", "move-item", "cpi", "mi"]);
 const ENV_FILE = /^\.env(\..+)?$/;
 const ENV_ALLOWED = /^\.env\.(.+\.)?example$|^\.env\.test$/;
+const OWN_LIMITS = [/^\.claude\/settings(\.local)?\.json$/i, /^\.claude\/guard\.json$/i, /^tools\/claude-hooks\//i];
+const WINDOWS = process.platform === "win32";
 
 function cleanArgument(argument) {
   return argument.replace(/^</, "").replace(/\\/g, "/");
@@ -39,17 +42,36 @@ function isProtectedEnvFile(argument) {
   return ENV_FILE.test(name) && !ENV_ALLOWED.test(name);
 }
 
+function comparable(path) {
+  const forward = path.replace(/\\/g, "/").replace(/^([A-Za-z]):(?=\/|$)/, (_, drive) => `/${drive.toLowerCase()}`);
+  const normalized = posix.normalize(forward === "" ? "." : forward);
+  return WINDOWS ? normalized.toLowerCase() : normalized;
+}
+
 export function repoRelativePath(path, context) {
-  const absolute = isAbsolute(path) ? path : resolve(context.cwd, path);
-  const fromRoot = relative(context.repoRoot, absolute).replace(/\\/g, "/");
-  return fromRoot === "" || fromRoot.startsWith("..") || isAbsolute(fromRoot) ? null : fromRoot;
+  const target = comparable(expandHome(cleanArgument(path)));
+  const absolute = target.startsWith("/") ? target : posix.join(comparable(context.cwd), target);
+  const fromRoot = posix.relative(comparable(context.repoRoot), absolute);
+  return fromRoot === "" || fromRoot.startsWith("..") ? null : fromRoot;
+}
+
+function matchesAny(fromRoot, patterns) {
+  return patterns.some((pattern) => pattern.test(fromRoot) || pattern.test(`${fromRoot}/`));
 }
 
 export function matchesBlockedPath(path, patterns, context) {
   if (patterns.length === 0) return false;
-  const fromRoot = repoRelativePath(cleanArgument(path), context);
-  return fromRoot !== null && patterns.some((pattern) => pattern.test(fromRoot) || pattern.test(`${fromRoot}/`));
+  const fromRoot = repoRelativePath(path, context);
+  return fromRoot !== null && matchesAny(fromRoot, patterns);
 }
+
+export function touchesOwnLimits(path, context) {
+  return matchesBlockedPath(path, OWN_LIMITS, context);
+}
+
+export const OWN_LIMITS_ASK = ask(
+  "This changes the agent's own limits (.claude/settings.json, .claude/guard.json or tools/claude-hooks/). The repo owner must approve it.",
+);
 
 function inspectedArguments(name, args) {
   const positionals = args.filter((argument) => !argument.startsWith("-"));
@@ -67,5 +89,6 @@ export function checkFileAccess(name, args, context) {
   if (written.some((argument) => matchesBlockedPath(argument, blockedPaths.write, context))) {
     return deny("Blocked: this path is off limits for writing in this repository (.claude/guard.json).");
   }
+  if (written.some((argument) => touchesOwnLimits(argument, context))) return OWN_LIMITS_ASK;
   return ALLOW;
 }
