@@ -1,0 +1,25 @@
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: "*.{ts,mjs,json,yml,yaml,md}"
+      run: pnpm prettier --write {staged_files}
+      stage_fixed: true
+    lint:
+      glob: "*.{ts,mjs}"
+      run: pnpm eslint --max-warnings=0 {staged_files}
+    secrets:
+      run: node bin/dev-kit.mjs scan-secrets --staged
+    branch:
+      run: node bin/dev-kit.mjs check-branch --staged
+pre-push:
+  commands:
+    branch:
+      run: node bin/dev-kit.mjs check-branch --pre-push {1}
+      use_stdin: true
+    checks:
+      run: node bin/dev-kit.mjs check-quiet typecheck test
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}

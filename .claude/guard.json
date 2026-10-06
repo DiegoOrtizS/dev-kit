@@ -1,0 +1,18 @@
+{
+  "protectedBranches": {
+    "main": { "allowedPaths": [] }
+  },
+  "lint": [
+    {
+      "match": "\\.(ts|mts|mjs|cjs)$",
+      "command": [
+        "node",
+        "node_modules/eslint/bin/eslint.js",
+        "--max-warnings=0",
+        "--no-warn-ignored",
+        "--no-color",
+        "{file}"
+      ]
+    }
+  ]
+}
