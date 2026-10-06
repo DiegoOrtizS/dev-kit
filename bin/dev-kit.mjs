@@ -4,6 +4,7 @@ import { loadConfig } from "../src/config.mjs";
 import { checkBranch } from "../src/guardrails/check-branch.mjs";
 import { checkQuiet } from "../src/guardrails/check-quiet.mjs";
 import { scanSecrets } from "../src/guardrails/scan-secrets.mjs";
+import { syncCheck } from "../src/guardrails/sync-check.mjs";
 import { worktreesClean } from "../src/guardrails/worktrees-clean.mjs";
 
 const COMMANDS = {
@@ -11,6 +12,7 @@ const COMMANDS = {
   "check-branch": checkBranch,
   "check-quiet": checkQuiet,
   "worktrees-clean": worktreesClean,
+  "sync-check": syncCheck,
 };
 
 const [name, ...args] = process.argv.slice(2);
@@ -21,4 +23,4 @@ if (!command) {
 }
 
 const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
-command(loadConfig(repoRoot), args);
+command(loadConfig(repoRoot), args, repoRoot);

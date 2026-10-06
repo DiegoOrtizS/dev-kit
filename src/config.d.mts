@@ -16,6 +16,7 @@ export interface DevKitConfig {
   lint: LintRule[];
   checks: [string, string][];
   worktrees: { base: string };
+  syncCheck: { agentOverrides: Record<string, string[]> };
 }
 
 export const CONFIG_PATH: string;

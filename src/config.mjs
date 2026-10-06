@@ -10,7 +10,7 @@ const DEFAULT_CHECKS = [
   ["test", "pnpm test"],
 ];
 
-const TOP_LEVEL_KEYS = ["protectedBranches", "blockedPaths", "secretScan", "lint", "checks", "worktrees"];
+const TOP_LEVEL_KEYS = ["protectedBranches", "blockedPaths", "secretScan", "lint", "checks", "worktrees", "syncCheck"];
 const BRANCH_KEYS = ["allowedPaths", "allowMerges", "blockAgentPush"];
 const BLOCKED_PATH_KEYS = ["read", "write", "commit"];
 const ALWAYS_PROTECTED = "main";
@@ -101,6 +101,18 @@ function normalizeWorktrees(worktrees = {}) {
   return { base: worktrees.base ?? "origin/main" };
 }
 
+function normalizeSyncCheck(syncCheck = {}) {
+  requireObject(syncCheck, "syncCheck", ["agentOverrides"]);
+  const overrides = syncCheck.agentOverrides ?? {};
+  requireObject(overrides, "syncCheck.agentOverrides", Object.keys(overrides));
+  for (const [agent, fields] of Object.entries(overrides)) {
+    if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string")) {
+      fail(`syncCheck.agentOverrides.${agent} must be a list of field names`);
+    }
+  }
+  return { agentOverrides: overrides };
+}
+
 export function normalizeConfig(raw = {}) {
   requireObject(raw, "the config", TOP_LEVEL_KEYS);
   return {
@@ -110,6 +122,7 @@ export function normalizeConfig(raw = {}) {
     lint: normalizeLint(raw.lint),
     checks: normalizeChecks(raw.checks),
     worktrees: normalizeWorktrees(raw.worktrees),
+    syncCheck: normalizeSyncCheck(raw.syncCheck),
   };
 }
 
