@@ -110,8 +110,26 @@ export function checkClaudeMd(repoRoot) {
   );
 }
 
+export function checkDocBudget(repoRoot, docBudget = {}) {
+  return Object.entries(docBudget).flatMap(([relative, maxBytes]) => {
+    const path = join(repoRoot, relative);
+    if (!existsSync(path)) {
+      return [`${relative}: listed in guard.json syncCheck.docBudget but missing; restore it or drop the entry`];
+    }
+    const size = Buffer.byteLength(readText(path), "utf8");
+    return size <= maxBytes
+      ? []
+      : [`${relative}: ${size} bytes, over its budget of ${maxBytes}; move detail or closed items to an archive doc`];
+  });
+}
+
 export function syncProblems(repoRoot, config) {
-  return [...checkShims(repoRoot), ...checkAgents(repoRoot, config.syncCheck), ...checkClaudeMd(repoRoot)];
+  return [
+    ...checkShims(repoRoot),
+    ...checkAgents(repoRoot, config.syncCheck),
+    ...checkClaudeMd(repoRoot),
+    ...checkDocBudget(repoRoot, config.syncCheck.docBudget),
+  ];
 }
 
 export function syncCheck(config, _args, repoRoot = process.cwd()) {
