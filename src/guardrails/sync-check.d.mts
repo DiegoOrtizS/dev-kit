@@ -6,6 +6,8 @@ export function checkShims(repoRoot: string): string[];
 export function checkAgents(repoRoot: string, syncCheck?: Partial<DevKitConfig["syncCheck"]>): string[];
 export function checkClaudeMd(repoRoot: string): string[];
 export const MIN_COMPACT_WINDOW: number;
+export const CONTEXT_MARKER: string;
+export function checkContextSection(repoRoot: string): string[];
 export function checkSettings(repoRoot: string): string[];
 export function checkDocBudget(repoRoot: string, docBudget?: Record<string, number>): string[];
 export function syncProblems(repoRoot: string, config: DevKitConfig): string[];

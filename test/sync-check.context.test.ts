@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { normalizeConfig } from "../src/config.mjs";
-import { checkDocBudget, checkSettings, syncProblems } from "../src/guardrails/sync-check.mjs";
+import {
+  CONTEXT_MARKER,
+  checkContextSection,
+  checkDocBudget,
+  checkSettings,
+  syncProblems,
+} from "../src/guardrails/sync-check.mjs";
 
 const kitRoot = path.resolve(__dirname, "..");
 let repo: string;
@@ -23,6 +29,58 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(repo, { recursive: true, force: true });
+});
+
+const limits = "# x\n\n## Never\n\n## Where to write\n\n";
+
+describe("checkContextSection", () => {
+  it("accepts the CLAUDE.md template", () => {
+    write("CLAUDE.md", readFileSync(path.join(kitRoot, "templates", "CLAUDE.md"), "utf8"));
+    expect(checkContextSection(repo)).toEqual([]);
+  });
+
+  it("accepts the marker under a heading in any language", () => {
+    write(
+      "CLAUDE.md",
+      `# x\n\n## Prohibido\n\n## Dónde se escribe\n\n## Presupuesto de contexto\n\n${CONTEXT_MARKER}\n\n- Un documento de más de ~3 KB se lee con \`grep -n\`.\n`,
+    );
+    expect(checkContextSection(repo)).toEqual([]);
+  });
+
+  it("accepts the marker in .claude/CLAUDE.md only, with CRLF line endings", () => {
+    write("CLAUDE.md", limits);
+    write(".claude/CLAUDE.md", `${limits}## Context budget\n${CONTEXT_MARKER}\n`.replace(/\n/g, "\r\n"));
+    expect(checkContextSection(repo)).toEqual([]);
+  });
+
+  it("reports a CLAUDE.md without the marker, even with a translated heading", () => {
+    write("CLAUDE.md", `${limits}## Context budget\n\n- grep, then a bounded read.\n`);
+    expect(checkContextSection(repo)).toEqual([
+      `CLAUDE.md: no context budget section; add one with ${CONTEXT_MARKER} on the line under its heading (see dev-kit templates/CLAUDE.md)`,
+    ]);
+  });
+
+  it("names both files when neither carries the marker", () => {
+    write("CLAUDE.md", limits);
+    write(".claude/CLAUDE.md", limits);
+    expect(checkContextSection(repo)[0]).toMatch(/^CLAUDE\.md or \.claude\/CLAUDE\.md: no context budget section/);
+  });
+
+  it("does not count a marker inside a fenced code block", () => {
+    write("CLAUDE.md", `${limits}## Context budget\n\n\`\`\`md\n${CONTEXT_MARKER}\n\`\`\`\n`);
+    expect(checkContextSection(repo)).toHaveLength(1);
+  });
+
+  it("reports a marker that is not right under a heading", () => {
+    write("CLAUDE.md", `${limits}## Context budget\n\n- a rule\n\n${CONTEXT_MARKER}\n`);
+    expect(checkContextSection(repo)).toEqual([
+      `CLAUDE.md: ${CONTEXT_MARKER} must sit on its own line right under a "## " heading`,
+    ]);
+  });
+
+  it("leaves a missing CLAUDE.md to checkClaudeMd", () => {
+    expect(checkContextSection(repo)).toEqual([]);
+  });
 });
 
 describe("checkSettings", () => {

@@ -31,10 +31,23 @@ Outside the repo: only the session scratchpad and sibling worktrees `../<repo>-*
 
 ## Read first
 
-- `docs/progress.md`: state and next step (short).
-- `CONTEXT.md`: domain language; use its terms in code.
-- `docs/engineering/standards-short.md`: rules every change follows.
+At most three small, current docs:
+
+- `docs/progress.md`: state and next step.
+- `docs/pending.md`: index of open items; detail and closed items live in `docs/pending-archive.md`.
 - `docs/engineering/lessons.md`: mistakes already corrected; do not repeat them.
+
+Read the relevant section only when the task touches it: `CONTEXT.md` (domain language; use its terms in code), `docs/engineering/standards.md`, the spec and plan under `docs/superpowers/`, `docs/adr/` (new ADR before reversing one).
+
+## Context budget
+
+<!-- dev-kit:context-budget -->
+
+- Doc over ~3 KB: `grep -n` the heading, then read at most ~80 lines. Never `cat` a whole large doc.
+- After a compaction, do not re-read specs or plans unless the next step needs a section.
+- Never Read a scratchpad or saved tool-result file whole: grep it or read a bounded range.
+- Wide exploration goes to a subagent with a short report.
+- Tracker docs (`progress.md`, `pending.md`, follow-ups) stay a short index. Closed items and detail move to `<name>-archive.md`, which is never in "Read first". Budgets are in `.claude/guard.json` `syncCheck.docBudget`.
 
 ## Stack
 
@@ -52,7 +65,17 @@ Outside the repo: only the session scratchpad and sibling worktrees `../<repo>-*
 - Work inline by default. Small change (1 to 3 files): no subagent and no per-task review.
 - Subagent only for medium or large slices, one per slice. Never two heavy agents in parallel.
 - One `code-reviewer` per plan or PR. `qa-tester` only at milestones, on 3 viewports.
-- `/clear` between tasks.
+- `/clear` between tasks. Auto-compact window and parallel subagents come from `dev-kit/templates/claude/settings.json`; never add `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
+
+## Advisor
+
+Main session <model> with <advisor model> as advisor. Consult the advisor only:
+
+- before accepting a plan, spec or architecture decision;
+- when the same error shows up a second time;
+- before closing a slice or opening a non-docs PR.
+
+Never for small or mechanical changes. Subagents consult it only when blocked.
 
 ## Working style
 
@@ -60,6 +83,14 @@ Outside the repo: only the session scratchpad and sibling worktrees `../<repo>-*
 - **Lessons:** after a correction from <owner>, add one line to `docs/engineering/lessons.md`.
 - **Red CI** on an own branch: fix it without asking, inside "Never".
 - **Simplicity:** smallest change that fixes the root cause.
+
+## Plans and subagents
+
+- One PR per plan, with a whole-branch `code-reviewer` pass at the end.
+- Each plan has a rulings doc, `docs/superpowers/plans/<date>-<plan>-rulings.md`, in the repo's docs language. One line per decision: `Ruling: <what> — <why> — <cost if wrong>`.
+- The controller decides ambiguities itself and records a ruling. It asks <owner> only before a merge or a push.
+- Subagents write their reports to files in the SDD workspace (`.superpowers/sdd/`, gitignored) and reply in under ~15 lines.
+- Before deleting the SDD workspace, copy the deferred review minors into the rulings doc.
 
 ## Git
 
