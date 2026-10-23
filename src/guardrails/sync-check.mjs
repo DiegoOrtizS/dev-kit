@@ -141,7 +141,7 @@ export function checkContextSection(repoRoot) {
     .map(([relative]) => `${relative}: ${CONTEXT_MARKER} must sit on its own line right under a "## " heading`);
   if (misplaced.length > 0 || placements.some(([, found]) => found.includes(true))) return misplaced;
   return [
-    `${present.join(" or ")}: no context budget section; add one with ${CONTEXT_MARKER} on the line under its heading (see dev-kit templates/CLAUDE.md)`,
+    `${present.join(" or ")}: no ${CONTEXT_MARKER}; put it under the context budget heading, or copy that section from dev-kit templates/CLAUDE.md`,
   ];
 }
 

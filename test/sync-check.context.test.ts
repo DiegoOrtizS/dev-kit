@@ -56,14 +56,16 @@ describe("checkContextSection", () => {
   it("reports a CLAUDE.md without the marker, even with a translated heading", () => {
     write("CLAUDE.md", `${limits}## Context budget\n\n- grep, then a bounded read.\n`);
     expect(checkContextSection(repo)).toEqual([
-      `CLAUDE.md: no context budget section; add one with ${CONTEXT_MARKER} on the line under its heading (see dev-kit templates/CLAUDE.md)`,
+      `CLAUDE.md: no ${CONTEXT_MARKER}; put it under the context budget heading, or copy that section from dev-kit templates/CLAUDE.md`,
     ]);
   });
 
   it("names both files when neither carries the marker", () => {
     write("CLAUDE.md", limits);
     write(".claude/CLAUDE.md", limits);
-    expect(checkContextSection(repo)[0]).toMatch(/^CLAUDE\.md or \.claude\/CLAUDE\.md: no context budget section/);
+    expect(checkContextSection(repo)[0]).toMatch(
+      /^CLAUDE\.md or \.claude\/CLAUDE\.md: no <!-- dev-kit:context-budget -->/,
+    );
   });
 
   it("does not count a marker inside a fenced code block", () => {
