@@ -120,6 +120,7 @@ describe("syncProblems", () => {
   it("is clean for a repo built from the templates", () => {
     installShims();
     write("CLAUDE.md", readFileSync(path.join(kitRoot, "templates", "CLAUDE.md"), "utf8"));
+    write(".claude/settings.json", readFileSync(path.join(kitRoot, "templates", "claude", "settings.json"), "utf8"));
     write(".claude/agents/code-reviewer.md", template("code-reviewer"));
     expect(syncProblems(repo, normalizeConfig())).toEqual([]);
   });

@@ -10,6 +10,14 @@ const FIRST_SECTIONS = [
   ["Never", "Prohibido"],
   ["Where to write", "Dónde se escribe"],
 ];
+const SETTINGS_PATH = ".claude/settings.json";
+const PCT_OVERRIDE = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
+const COMPACT_WINDOW = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
+export const MIN_COMPACT_WINDOW = 300_000;
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function readText(path) {
   return readFileSync(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
@@ -110,6 +118,31 @@ export function checkClaudeMd(repoRoot) {
   );
 }
 
+export function checkSettings(repoRoot) {
+  const path = join(repoRoot, SETTINGS_PATH);
+  if (!existsSync(path)) return [];
+  let settings;
+  try {
+    settings = JSON.parse(readText(path));
+  } catch (error) {
+    return [`${SETTINGS_PATH}: not valid JSON (${error.message})`];
+  }
+  const env = isPlainObject(settings?.env) ? settings.env : {};
+  const problems = [];
+  if (Object.hasOwn(env, PCT_OVERRIDE)) {
+    problems.push(`${SETTINGS_PATH}: env.${PCT_OVERRIDE} is set; remove it, it compacts long before the window fills`);
+  }
+  if (Object.hasOwn(env, COMPACT_WINDOW)) {
+    const value = String(env[COMPACT_WINDOW]).trim();
+    if (!/^\d+$/.test(value) || Number(value) < MIN_COMPACT_WINDOW) {
+      problems.push(
+        `${SETTINGS_PATH}: env.${COMPACT_WINDOW} is "${env[COMPACT_WINDOW]}"; set it to at least ${MIN_COMPACT_WINDOW} (template: 400000)`,
+      );
+    }
+  }
+  return problems;
+}
+
 export function checkDocBudget(repoRoot, docBudget = {}) {
   return Object.entries(docBudget).flatMap(([relative, maxBytes]) => {
     const path = join(repoRoot, relative);
@@ -128,6 +161,7 @@ export function syncProblems(repoRoot, config) {
     ...checkShims(repoRoot),
     ...checkAgents(repoRoot, config.syncCheck),
     ...checkClaudeMd(repoRoot),
+    ...checkSettings(repoRoot),
     ...checkDocBudget(repoRoot, config.syncCheck.docBudget),
   ];
 }
