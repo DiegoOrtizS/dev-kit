@@ -104,8 +104,25 @@ function normalizeWorktrees(worktrees = {}) {
 
 const AGENT_NAME = /^[a-z][a-z0-9-]*$/;
 
+function isRelativeRepoPath(path) {
+  return path !== "" && !path.includes("\\") && !/^[/~]|^[A-Za-z]:/.test(path) && !path.split("/").includes("..");
+}
+
+function normalizeDocBudget(docBudget = {}) {
+  requireObject(docBudget, "syncCheck.docBudget", Object.keys(docBudget));
+  for (const [path, maxBytes] of Object.entries(docBudget)) {
+    if (!isRelativeRepoPath(path)) {
+      fail(`syncCheck.docBudget has an invalid path: ${path} (use a repo-relative path with forward slashes)`);
+    }
+    if (!Number.isInteger(maxBytes) || maxBytes <= 0) {
+      fail(`syncCheck.docBudget.${path} must be a positive whole number of bytes`);
+    }
+  }
+  return docBudget;
+}
+
 function normalizeSyncCheck(syncCheck = {}) {
-  requireObject(syncCheck, "syncCheck", ["agentOverrides", "requiredAgents"]);
+  requireObject(syncCheck, "syncCheck", ["agentOverrides", "requiredAgents", "docBudget"]);
   const overrides = syncCheck.agentOverrides ?? {};
   requireObject(overrides, "syncCheck.agentOverrides", Object.keys(overrides));
   for (const [agent, fields] of Object.entries(overrides)) {
@@ -118,7 +135,7 @@ function normalizeSyncCheck(syncCheck = {}) {
   if (!Array.isArray(requiredAgents) || requiredAgents.some((agent) => !AGENT_NAME.test(String(agent)))) {
     fail("syncCheck.requiredAgents must be a list of agent names");
   }
-  return { agentOverrides: overrides, requiredAgents };
+  return { agentOverrides: overrides, requiredAgents, docBudget: normalizeDocBudget(syncCheck.docBudget) };
 }
 
 export function normalizeConfig(raw = {}) {

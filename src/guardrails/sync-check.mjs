@@ -10,6 +10,15 @@ const FIRST_SECTIONS = [
   ["Never", "Prohibido"],
   ["Where to write", "Dónde se escribe"],
 ];
+const SETTINGS_PATH = ".claude/settings.json";
+const PCT_OVERRIDE = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
+const COMPACT_WINDOW = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
+export const MIN_COMPACT_WINDOW = 300_000;
+export const CONTEXT_MARKER = "<!-- dev-kit:context-budget -->";
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 function readText(path) {
   return readFileSync(path, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n");
@@ -88,8 +97,12 @@ export function checkAgents(repoRoot, { agentOverrides = {}, requiredAgents = []
   return [...missing, ...drift];
 }
 
+function withoutCodeBlocks(text) {
+  return text.replace(/^(```|~~~)[\s\S]*?^\1/gm, "");
+}
+
 function headingsOutsideCode(text) {
-  return [...text.replace(/^(```|~~~)[\s\S]*?^\1/gm, "").matchAll(/^## (.+)$/gm)].map(([, heading]) => heading.trim());
+  return [...withoutCodeBlocks(text).matchAll(/^## (.+)$/gm)].map(([, heading]) => heading.trim());
 }
 
 function checkSections(relative, headings) {
@@ -110,8 +123,75 @@ export function checkClaudeMd(repoRoot) {
   );
 }
 
+function markerPlacements(text) {
+  const lines = withoutCodeBlocks(text).split("\n");
+  return lines.flatMap((line, index) => {
+    if (line.trim() !== CONTEXT_MARKER) return [];
+    const above = lines.slice(0, index).findLast((previous) => previous.trim() !== "");
+    return [/^## \S/.test(above ?? "")];
+  });
+}
+
+export function checkContextSection(repoRoot) {
+  const present = CLAUDE_MD_PATHS.filter((path) => existsSync(join(repoRoot, path)));
+  if (present.length === 0) return [];
+  const placements = present.map((relative) => [relative, markerPlacements(readText(join(repoRoot, relative)))]);
+  const misplaced = placements
+    .filter(([, found]) => found.includes(false))
+    .map(([relative]) => `${relative}: ${CONTEXT_MARKER} must sit on its own line right under a "## " heading`);
+  if (misplaced.length > 0 || placements.some(([, found]) => found.includes(true))) return misplaced;
+  return [
+    `${present.join(" or ")}: no ${CONTEXT_MARKER}; put it under the context budget heading, or copy that section from dev-kit templates/CLAUDE.md`,
+  ];
+}
+
+export function checkSettings(repoRoot) {
+  const path = join(repoRoot, SETTINGS_PATH);
+  if (!existsSync(path)) return [];
+  let settings;
+  try {
+    settings = JSON.parse(readText(path));
+  } catch (error) {
+    return [`${SETTINGS_PATH}: not valid JSON (${error.message})`];
+  }
+  const env = isPlainObject(settings?.env) ? settings.env : {};
+  const problems = [];
+  if (Object.hasOwn(env, PCT_OVERRIDE)) {
+    problems.push(`${SETTINGS_PATH}: env.${PCT_OVERRIDE} is set; remove it, it compacts long before the window fills`);
+  }
+  if (Object.hasOwn(env, COMPACT_WINDOW)) {
+    const value = String(env[COMPACT_WINDOW]).trim();
+    if (!/^\d+$/.test(value) || Number(value) < MIN_COMPACT_WINDOW) {
+      problems.push(
+        `${SETTINGS_PATH}: env.${COMPACT_WINDOW} is "${env[COMPACT_WINDOW]}"; set it to at least ${MIN_COMPACT_WINDOW} (template: 400000)`,
+      );
+    }
+  }
+  return problems;
+}
+
+export function checkDocBudget(repoRoot, docBudget = {}) {
+  return Object.entries(docBudget).flatMap(([relative, maxBytes]) => {
+    const path = join(repoRoot, relative);
+    if (!existsSync(path)) {
+      return [`${relative}: listed in guard.json syncCheck.docBudget but missing; restore it or drop the entry`];
+    }
+    const size = Buffer.byteLength(readText(path), "utf8");
+    return size <= maxBytes
+      ? []
+      : [`${relative}: ${size} bytes, over its budget of ${maxBytes}; move detail or closed items to an archive doc`];
+  });
+}
+
 export function syncProblems(repoRoot, config) {
-  return [...checkShims(repoRoot), ...checkAgents(repoRoot, config.syncCheck), ...checkClaudeMd(repoRoot)];
+  return [
+    ...checkShims(repoRoot),
+    ...checkAgents(repoRoot, config.syncCheck),
+    ...checkClaudeMd(repoRoot),
+    ...checkContextSection(repoRoot),
+    ...checkSettings(repoRoot),
+    ...checkDocBudget(repoRoot, config.syncCheck.docBudget),
+  ];
 }
 
 export function syncCheck(config, _args, repoRoot = process.cwd()) {
@@ -119,7 +199,7 @@ export function syncCheck(config, _args, repoRoot = process.cwd()) {
   for (const problem of problems) process.stdout.write(`${problem}\n`);
   if (problems.length > 0) {
     process.stderr.write(
-      "Out of sync with dev-kit. Fix the files, or record a deliberate agent difference in .claude/guard.json syncCheck.agentOverrides.\n",
+      'Out of sync with dev-kit. Fix the files (dev-kit README, "Templates and sync-check"), or record a deliberate agent difference in .claude/guard.json syncCheck.agentOverrides.\n',
     );
     process.exit(1);
   }

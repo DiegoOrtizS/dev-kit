@@ -98,6 +98,15 @@ describe("syncCheck config", () => {
     [{ syncCheck: { agentOverrides: { mechanic: "model" } } }],
     [{ syncCheck: { requiredAgents: "code-reviewer" } }],
     [{ syncCheck: { requiredAgent: ["code-reviewer"] } }],
+    [{ syncCheck: { docBudget: ["CLAUDE.md"] } }],
+    [{ syncCheck: { docBudget: { "CLAUDE.md": "9216" } } }],
+    [{ syncCheck: { docBudget: { "CLAUDE.md": 0 } } }],
+    [{ syncCheck: { docBudget: { "CLAUDE.md": 9.5 } } }],
+    [{ syncCheck: { docBudget: { "docs\\pending.md": 4096 } } }],
+    [{ syncCheck: { docBudget: { "/etc/passwd": 4096 } } }],
+    [{ syncCheck: { docBudget: { "C:/notes.md": 4096 } } }],
+    [{ syncCheck: { docBudget: { "../other/CLAUDE.md": 4096 } } }],
+    [{ syncCheck: { docBudget: { "": 4096 } } }],
   ])("rejects %j", (raw) => {
     expect(() => normalizeConfig(raw)).toThrow(/guard\.json/);
   });
@@ -107,5 +116,11 @@ describe("syncCheck config", () => {
       syncCheck: { agentOverrides: { "security-auditor": ["tools"] }, requiredAgents: ["code-reviewer"] },
     });
     expect(config.syncCheck.requiredAgents).toEqual(["code-reviewer"]);
+    expect(config.syncCheck.docBudget).toEqual({});
+  });
+
+  it("accepts doc budgets keyed by repo-relative paths", () => {
+    const docBudget = { "CLAUDE.md": 9216, "docs/pending.md": 4096, ".claude/CLAUDE.md": 9216 };
+    expect(normalizeConfig({ syncCheck: { docBudget } }).syncCheck.docBudget).toEqual(docBudget);
   });
 });
