@@ -27,7 +27,14 @@ const FILE_READERS = new Set([
   "select-string",
   "sls",
 ]);
-const FILE_MOVERS = new Set(["cp", "mv", "copy-item", "move-item", "cpi", "mi"]);
+const FILE_MOVERS = new Set(["cp", "mv", "ln", "install", "copy-item", "move-item", "cpi", "mi"]);
+const IN_PLACE_FLAGS = {
+  sed: /^-[A-Za-z]*i|^--in-place/,
+  perl: /^-[A-Za-z]*i/,
+  awk: /^-i$|^--in-?place/,
+  gawk: /^-i$|^--in-?place/,
+  patch: /^/,
+};
 const FILE_WRITERS = new Set([
   "tee",
   "truncate",
@@ -106,11 +113,18 @@ export function isFileCommand(name) {
   return FILE_READERS.has(name) || FILE_MOVERS.has(name) || FILE_WRITERS.has(name);
 }
 
+function editsInPlace(name, args) {
+  const flag = IN_PLACE_FLAGS[name];
+  return flag !== undefined && args.some((argument) => flag.test(argument));
+}
+
 function inspectedArguments(name, args) {
   const positionals = args.filter((argument) => !argument.startsWith("-"));
+  const read = FILE_READERS.has(name) ? args : [];
   if (FILE_MOVERS.has(name)) return { read: positionals.slice(0, -1), written: positionals.slice(-1) };
-  if (FILE_WRITERS.has(name)) return { read: [], written: positionals };
-  return { read: FILE_READERS.has(name) ? args : [], written: [] };
+  if (FILE_WRITERS.has(name) || editsInPlace(name, args)) return { read, written: positionals };
+  if (name === "dd") return { read, written: args.filter((argument) => /^of=/.test(argument)).map((a) => a.slice(3)) };
+  return { read, written: [] };
 }
 
 export function checkWrittenPaths(written, context) {
