@@ -8,6 +8,7 @@ const HOOK_DISABLING_ASSIGNMENT = [
   /^LEFTHOOK_EXCLUDE=/i,
   /^GIT_CONFIG_(PARAMETERS|COUNT|GLOBAL|SYSTEM)=/i,
   /^GIT_CONFIG_(KEY|VALUE)_\d+=/i,
+  /^(HOME|XDG_CONFIG_HOME)=/i,
 ];
 const HOOKS_PATH_CONFIG = /^core\.hookspath(=|$)/i;
 const REMOTE_PUSH_CONFIG = /^remote\.[^=]*\.push(=|$)/i;

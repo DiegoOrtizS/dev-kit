@@ -49,7 +49,7 @@ const FILE_WRITERS = new Set([
   "rmdir",
 ]);
 const GIT_HOOK_FILES =
-  /(^|\/)(\.git(\/hooks(\/|$)|\/config(\.worktree)?$|\/worktrees\/[^/]+\/config(\.worktree)?$|$)|lefthook-local\.ya?ml$)/i;
+  /(^|\/)(\.git(\/hooks(\/|$)|\/config(\.worktree)?$|\/worktrees\/[^/]+\/config(\.worktree)?$|$)|\.gitconfig$|\.config\/git(\/|$)|lefthook-local\.ya?ml$)/i;
 const ENV_FILE = /^\.env(\..+)?$/;
 const ENV_ALLOWED = /^\.env\.(.+\.)?example$|^\.env\.test$/;
 const OWN_LIMITS = [/^\.claude\/settings(\.local)?\.json$/i, /^\.claude\/guard\.json$/i, /^tools\/claude-hooks\//i];
@@ -99,7 +99,7 @@ export const OWN_LIMITS_ASK = ask(
   "This changes the agent's own limits (.claude/settings.json, .claude/guard.json or tools/claude-hooks/). The repo owner must approve it.",
 );
 export const GIT_HOOKS_ASK = ask(
-  "This edits the git hooks or repository config directly (.git/hooks, .git/config, the .git file or lefthook-local.yml). The repo owner must approve it.",
+  "This edits the git hooks or git config directly (.git/hooks, .git/config, the .git file, ~/.gitconfig, ~/.config/git or lefthook-local.yml). The repo owner must approve it.",
 );
 
 export function isFileCommand(name) {

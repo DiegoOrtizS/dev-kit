@@ -20,6 +20,12 @@ describe("git hooks and config files", () => {
     "lefthook-local.yml",
     "packages/app/lefthook-local.yaml",
     "~/repos/kit/.git/hooks/pre-commit",
+    "~/.gitconfig",
+    "C:/Users/x/.gitconfig",
+    "%USERPROFILE%\\.gitconfig",
+    "$HOME/.config/git/config",
+    "~/.config/git/hooks/pre-commit",
+    "~/.config/git",
   ])("asks before writing %s", (path) => {
     for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit"]) {
       const verdict = write(tool, path);
@@ -29,12 +35,18 @@ describe("git hooks and config files", () => {
     }
   });
 
-  it.each([".github/workflows/ci.yml", "src/.gitignore", "lefthook.yml", "docs/git-hooks.md", ".gitconfig", "x.git"])(
-    "allows writing %s",
-    (path) => {
-      expect(write("Write", path)).toEqual({ block: false });
-    },
-  );
+  it.each([
+    ".github/workflows/ci.yml",
+    "src/.gitignore",
+    "lefthook.yml",
+    "docs/git-hooks.md",
+    "docs/gitconfig.md",
+    ".gitconfig.example",
+    "x.git",
+    "src/config/git.ts",
+  ])("allows writing %s", (path) => {
+    expect(write("Write", path)).toEqual({ block: false });
+  });
 
   it.each([
     "cp hook.sh .git/hooks/pre-commit",
@@ -48,6 +60,9 @@ describe("git hooks and config files", () => {
     "truncate -s 0 .git/hooks/pre-commit",
     "echo x > lefthook-local.yml",
     "cp x .git",
+    "cp gitconfig ~/.gitconfig",
+    "echo '[core]' >> ~/.config/git/config",
+    "mv x $HOME/.gitconfig",
   ])("asks before %s in bash", (command) => {
     expect(bash(command)).toMatchObject({ block: false, ask: true });
   });
@@ -61,6 +76,9 @@ describe("git hooks and config files", () => {
 
   it.each([
     "cat .git/config",
+    "cat ~/.gitconfig",
+    "git config --global --get user.name",
+    "HOMEBREW_NO_AUTO_UPDATE=1 brew install x",
     "ls .git/hooks",
     "git config --get core.hooksPath",
     "echo x > build/out.txt",
@@ -96,8 +114,23 @@ describe("hook-disabling environment outside bash syntax", () => {
     'cmd /c "set LEFTHOOK_EXCLUDE=eslint& git commit -m x"',
     "HUSKY=0 git commit -m x",
     "export HUSKY=0",
+    "HOME=/tmp git commit -m x",
+    "XDG_CONFIG_HOME=/tmp git commit -m x",
+    "export HOME=/tmp",
+    "env HOME=/tmp git commit -m x",
+    'cmd /c "set HOME=C:\\tmp&& git commit -m x"',
+    'cmd /c "set XDG_CONFIG_HOME=C:\\tmp&& git commit -m x"',
   ])("blocks %s", (command) => {
     expect(bash(command).block).toBe(true);
+  });
+
+  it.each([
+    "$env:HOME = '/tmp'; git commit -m x",
+    "$env:XDG_CONFIG_HOME = 'C:\\tmp'; git commit -m x",
+    "Set-Item Env:HOME C:\\tmp",
+    "[Environment]::SetEnvironmentVariable('HOME', 'C:\\tmp')",
+  ])("blocks %s in powershell", (command) => {
+    expect(powershell(command).block).toBe(true);
   });
 
   it.each([
