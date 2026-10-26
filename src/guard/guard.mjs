@@ -3,8 +3,18 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
 import { findSecrets } from "../guardrails/rules.mjs";
-import { BASH, POWERSHELL, commandName, dialectOfShell, scriptFromShell } from "./dialects.mjs";
-import { OWN_LIMITS_ASK, checkFileAccess, isFileCommand, matchesBlockedPath, touchesOwnLimits } from "./env-files.mjs";
+import { ENV_EXPORTERS, reanchored } from "./anchors.mjs";
+import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
+import {
+  GIT_HOOKS_ASK,
+  OWN_LIMITS_ASK,
+  checkFileAccess,
+  checkWrittenPaths,
+  matchesBlockedPath,
+  touchesGitHooks,
+  touchesOwnLimits,
+} from "./env-files.mjs";
+import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { checkGh } from "./gh.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
@@ -17,49 +27,37 @@ import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
-const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly", "local"]);
-const ANCHORS = new Set(["git", "gh", "sst", "lefthook", "find", "eval"]);
-const PRINTERS = new Set(["echo", "printf", "write-output", "write-host", "man", "which", "where", "whereis"]);
-
-function isAnchor(name) {
-  return ANCHORS.has(name) || REMOVE_COMMANDS.has(name) || dialectOfShell(name) !== null;
-}
-
-function isKnownCommand(name) {
-  return isAnchor(name) || ENV_EXPORTERS.has(name) || PRINTERS.has(name) || isFileCommand(name);
-}
-
-function reanchored(rest) {
-  const index = rest.findIndex((word, position) => position > 0 && isAnchor(commandName(word)));
-  return index === -1 ? null : rest.slice(index);
-}
-
-function checkFindExec(args, context) {
+function checkFindExec(args, context, dialect) {
   const verdicts = [];
   for (let i = 0; i < args.length; i += 1) {
     if (!["-exec", "-execdir", "-ok", "-okdir"].includes(args[i])) continue;
     const end = args.findIndex((argument, index) => index > i && (argument === ";" || argument === "+"));
-    verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context));
+    verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context, dialect));
   }
   return firstBlock(verdicts);
 }
 
-function checkWords(words, context) {
+function checkWords(words, context, dialect) {
   const { assignments, rest } = stripPrefixes(words);
   const assignmentVerdict = checkAssignments(assignments);
   if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
   const [command, ...args] = rest;
   const name = commandName(command);
-  const wrapped = isKnownCommand(name) ? null : reanchored(rest);
-  if (wrapped !== null) return checkWords(wrapped, context);
+  const wrapped = reanchored(rest, dialect);
+  if (wrapped !== null) return checkWords(wrapped, context, dialect);
   if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));
+  const setters = setterAssignments(name, args, dialect);
+  if (setters !== null && setters.length > 0) return checkAssignments(setters);
   const nested = scriptFromShell(name, args);
   if (nested !== null) return checkScript(nested.script, context, nested.dialect);
-  if (name === "eval") return checkScript(args.join(" "), context);
+  if (name === "eval") return checkScript(args.join(" "), context, dialect);
+  if (name === "lefthook" && args.includes("uninstall")) {
+    return deny("Blocked: lefthook uninstall removes the git hooks.");
+  }
   return firstBlock([
     name === "git" ? checkGit(args, context) : ALLOW,
     name === "gh" ? checkGh(args) : ALLOW,
-    name === "find" ? checkFindExec(args, context) : ALLOW,
+    name === "find" ? checkFindExec(args, context, dialect) : ALLOW,
     checkSst(rest),
     checkFileAccess(name, args, context),
     REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context) : ALLOW,
@@ -69,8 +67,10 @@ function checkWords(words, context) {
 function checkScript(script, context, dialect = BASH) {
   const found = splitSegments(script, dialect);
   return firstBlock([
-    ...found.segments.map((words) => checkWords(words, context)),
+    checkAssignments(environmentCalls(script, dialect)),
+    ...found.segments.map((words) => checkWords(words, context, dialect)),
     ...stdinScripts(found).map((stdin) => checkScript(stdin.script, context, stdin.dialect)),
+    checkWrittenPaths(found.written, context),
   ]);
 }
 
@@ -108,6 +108,7 @@ function checkFilePath(toolName, input, context) {
     return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
   }
   if (WRITE_TOOLS.has(toolName) && touchesOwnLimits(path, context)) return OWN_LIMITS_ASK;
+  if (WRITE_TOOLS.has(toolName) && touchesGitHooks(path)) return GIT_HOOKS_ASK;
   return ALLOW;
 }
 

@@ -4,6 +4,7 @@ import { ALLOW, deny } from "./verdict.mjs";
 
 const HOOK_DISABLING_ASSIGNMENT = [
   /^LEFTHOOK=(0|false)$/i,
+  /^HUSKY=0$/i,
   /^LEFTHOOK_EXCLUDE=/i,
   /^GIT_CONFIG_(PARAMETERS|COUNT|GLOBAL|SYSTEM)=/i,
   /^GIT_CONFIG_(KEY|VALUE)_\d+=/i,

@@ -18,7 +18,7 @@ export const POWERSHELL = {
   substitutionInQuotes: true,
   bashSyntax: false,
 };
-const CMD = {
+export const CMD = {
   escape: "^",
   quotes: '"',
   breaks: new Set(["|", "&", "\n", "(", ")"]),

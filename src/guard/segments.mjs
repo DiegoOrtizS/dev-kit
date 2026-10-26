@@ -34,7 +34,8 @@ function scan(command, dialect, found, start, closer) {
 
   const finishWord = () => {
     if (heredocDelimiterNext) heredocs.push({ delimiter: word, owner: words });
-    else if (!skipNextWord) words.push(word);
+    else if (skipNextWord) found.written.push(word);
+    else words.push(word);
     heredocDelimiterNext = false;
     skipNextWord = false;
   };
@@ -123,7 +124,7 @@ function scan(command, dialect, found, start, closer) {
 }
 
 export function splitSegments(command, dialect = BASH) {
-  const found = { segments: [], heredocs: [] };
+  const found = { segments: [], heredocs: [], written: [] };
   scan(command, dialect, found, 0, null);
   return found;
 }
