@@ -69,10 +69,20 @@ describe("check-commit <file>", () => {
     expect(result.stderr).toMatch(/type/);
   });
 
-  it("lets a merge message through", () => {
+  it.each([
+    "Merge branch 'main' into feat/x\n",
+    'Revert "feat: thing"\n\nThis reverts commit abc.\n',
+    "fixup! feat: thing\n",
+  ])("lets git's own message %j through", (message) => {
     const file = path.join(repo, "COMMIT_EDITMSG");
-    writeFileSync(file, "Merge branch 'main' into feat/x\n");
+    writeFileSync(file, message);
     expect(commitProblems([file], repo)).toEqual([]);
+  });
+
+  it("does not exempt a hand-written merge-like message", () => {
+    const file = path.join(repo, "COMMIT_EDITMSG");
+    writeFileSync(file, "Merge the things\n");
+    expect(commitProblems([file], repo)).toHaveLength(1);
   });
 });
 
@@ -85,6 +95,14 @@ describe("check-commit --message", () => {
   it("uses only the first line of a multi-line text", () => {
     expect(commitProblems(["--message", "feat: thing\n\nnot a header."], repo)).toEqual([]);
   });
+
+  it.each(["Merge branch 'main' into feat/x", "Merge the things", "Revert deploy", 'Revert "feat: thing"', "fixup! x"])(
+    "never exempts a title, so %j fails",
+    (title) => {
+      expect(commitProblems(["--message", title], repo)).toHaveLength(1);
+      expect(checkCommit("--message", title).status).toBe(1);
+    },
+  );
 
   it("fails through the bin with exit code 1", () => {
     const result = checkCommit("--message", "wip");
@@ -128,6 +146,15 @@ describe("check-commit --range", () => {
     );
     git("merge", "-q", "--no-ff", "-m", "Not conventional merge", "feat/x");
     expect(commitProblems(["--range", `${base}..HEAD`], repo)).toEqual([]);
+  });
+
+  it("exempts git's revert and fixup commits but not look-alikes", () => {
+    const base = git("rev-parse", "HEAD");
+    commit('Revert "feat: thing"\n\nThis reverts commit abc.');
+    commit("fixup! feat: thing");
+    expect(commitProblems(["--range", `${base}..HEAD`], repo)).toEqual([]);
+    const fake = commit("Revert the deploy");
+    expect(commitProblems(["--range", `${base}..HEAD`], repo).join("\n")).toContain(fake.slice(0, 7));
   });
 
   it("checks the full first line, not git's space-joined subject", () => {

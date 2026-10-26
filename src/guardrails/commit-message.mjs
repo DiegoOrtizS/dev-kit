@@ -6,7 +6,7 @@ export const MAX_HEADER = 100;
 
 const HEADER = /^([a-z]+)(?:\(([^()]*)\))?(!?):(.*)$/;
 const SCOPE = /^[a-z0-9./-]+$/;
-const EXEMPT = /^(Merge |Revert |fixup! |squash! )/;
+const EXEMPT = /^(Merge branch |Merge pull request #|Merge remote-tracking branch |Revert "|fixup! |squash! )/;
 const DEPENDABOT = /dependabot/i;
 const USAGE = 'usage: dev-kit check-commit <file> | --message "<text>" | --range <base>..<head>';
 
@@ -37,8 +37,8 @@ export function headerProblems(header) {
   return problems;
 }
 
-function messageProblems(header) {
-  if (isExempt(header)) return [];
+function messageProblems(header, { exempt }) {
+  if (exempt && isExempt(header)) return [];
   const problems = headerProblems(header);
   return problems.length === 0 ? [] : [`${header}\n${problems.map((problem) => `  ${problem}`).join("\n")}`];
 }
@@ -66,14 +66,14 @@ export function commitProblems(args, cwd) {
   if (!mode || rest.length > 0) throw new Error(USAGE);
   if (mode === "--message") {
     if (value === undefined) throw new Error(USAGE);
-    return messageProblems(headerOf(value));
+    return messageProblems(headerOf(value), { exempt: false });
   }
   if (mode === "--range") {
     if (value === undefined || !value.includes("..")) throw new Error(USAGE);
     return rangeProblems(value, cwd);
   }
   if (mode.startsWith("--") || value !== undefined) throw new Error(USAGE);
-  return messageProblems(headerOf(readFileSync(mode, "utf8"), { stripComments: true }));
+  return messageProblems(headerOf(readFileSync(mode, "utf8"), { stripComments: true }), { exempt: true });
 }
 
 export function checkCommit(_config, args, repoRoot = process.cwd()) {

@@ -68,20 +68,29 @@ describe("headerProblems", () => {
 describe("isExempt", () => {
   it.each([
     "Merge branch 'main' into feat/x",
+    "Merge branch 'feat/x'",
     "Merge pull request #1 from x/y",
+    "Merge remote-tracking branch 'origin/main' into feat/x",
     'Revert "feat: add the thing"',
     "fixup! feat: add the thing",
     "squash! feat: add the thing",
-  ])("exempts %j", (header) => {
+  ])("exempts git's own form %j", (header) => {
     expect(isExempt(header)).toBe(true);
   });
 
-  it.each(["merge main", "revert: thing", "fixup feat: x", "feat: Merge the things"])(
-    "does not exempt %j",
-    (header) => {
-      expect(isExempt(header)).toBe(false);
-    },
-  );
+  it.each([
+    "Merge the things",
+    "Merge main",
+    "merge branch 'x'",
+    "Revert deploy",
+    "Revert the thing",
+    "revert: thing",
+    "fixup feat: x",
+    "fixup!feat: x",
+    "feat: Merge the things",
+  ])("does not exempt the look-alike %j", (header) => {
+    expect(isExempt(header)).toBe(false);
+  });
 });
 
 describe("headerOf", () => {
