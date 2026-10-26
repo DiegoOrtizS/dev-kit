@@ -1,18 +1,18 @@
 # dev-kit
 
-Shared tooling for my personal repositories: a guard for Claude Code agents, git guardrails (secret scan, protected branches, worktree cleanup) and an ESLint rule. It started as duplicated `tools/` folders in three repos, two in TypeScript and one in Python, that kept drifting apart.
+Shared tooling for my personal repositories: a guard for Claude Code agents, git guardrails (secret scan, protected branches, commit messages, worktree cleanup) and an ESLint rule. It started as duplicated `tools/` folders in three repos, two in TypeScript and one in Python, that kept drifting apart.
 
 The guard is how an agent holds itself back. It is **not a security boundary**: it stops honest mistakes and casual bypasses, not someone who sets out to defeat it.
 
 ## What is inside
 
-| Piece                                                                  | Entry                                            | Used by                                     |
-| ---------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------- |
-| Claude Code `PreToolUse` guard                                         | `dev-kit/guard` (`runGuard`, `evaluateToolCall`) | any repo, any language                      |
-| Claude Code `PostToolUse` lint                                         | `dev-kit/lint-after-edit` (`runLintAfterEdit`)   | any repo; the linter is configured per repo |
-| Secret scan, branch policy, quiet checks, worktree cleanup, sync check | `dev-kit` bin                                    | any repo with git and Node                  |
-| `no-comments` ESLint rule                                              | `dev-kit/eslint`                                 | TypeScript repos (ESLint 9 or 10)           |
-| Secret patterns                                                        | `dev-kit/secrets`                                | anything that wants the same list           |
+| Piece                                                                                                | Entry                                            | Used by                                     |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------- |
+| Claude Code `PreToolUse` guard                                                                       | `dev-kit/guard` (`runGuard`, `evaluateToolCall`) | any repo, any language                      |
+| Claude Code `PostToolUse` lint                                                                       | `dev-kit/lint-after-edit` (`runLintAfterEdit`)   | any repo; the linter is configured per repo |
+| Secret scan, branch policy, commit messages, quiet checks, worktree cleanup, sync check, release tag | `dev-kit` bin                                    | any repo with git and Node                  |
+| `no-comments` ESLint rule                                                                            | `dev-kit/eslint`                                 | TypeScript repos (ESLint 9 or 10)           |
+| Secret patterns                                                                                      | `dev-kit/secrets`                                | anything that wants the same list           |
 
 The package exports runnable tools and configuration, not domain libraries. A Python repo uses it only as dev tooling and never imports it at runtime.
 
@@ -22,7 +22,7 @@ The package exports runnable tools and configuration, not domain libraries. A Py
 pnpm add -D --save-exact github:DiegoOrtizS/dev-kit#v0.3.0
 ```
 
-Pin a tag. Dependabot does not update git dependencies, so a kit upgrade is a manual PR in each consumer that bumps the tag.
+Pin a tag. Dependabot does not update git dependencies, so a kit upgrade is a manual PR in each consumer that bumps the tag. In the PR that bumps past v0.4.0, switch the `commit-msg` hook and the PR title step in CI to `dev-kit check-commit` (see "Commit messages") and drop `@commitlint/*` with `commitlint.config.mjs`, or `.githooks/check_message.py` in the Python repo.
 
 The package has no lifecycle scripts (`prepare`, `postinstall`), so pnpm installs it without any build approval. Keep it that way.
 
@@ -129,14 +129,69 @@ CI runs gitleaks over the full history on every pull request and push to `main`,
 ```sh
 dev-kit scan-secrets --staged | --all
 dev-kit check-branch --staged | --pre-push [remote]
+dev-kit check-commit <file> | --message "<text>" | --range <base>..<head>
 dev-kit check-quiet [step ...]
 dev-kit worktrees-clean [--apply]
 dev-kit sync-check
+dev-kit release-tag
 ```
 
 From a git hook, call the bin through Node (`node node_modules/dev-kit/bin/dev-kit.mjs ...`) when `pnpm` might not be on the path, for example in a Python repository.
 
 `worktrees-clean` prints what it would remove, and `--apply` removes it. It never touches the current worktree, a worktree with uncommitted or untracked files, or a protected branch. A worktree or local branch counts as merged when its commit is already in `worktrees.base`, or when merging it into the base would leave the base tree unchanged (`git merge-tree --write-tree`), which is how squash merges are recognized. A branch whose changes conflict with the base, or were edited again on the base after the squash, is kept; delete it by hand. `--write-tree` needs git 2.38 or later. With older git the check fails, so only commits already in the base count as merged.
+
+## Commit messages
+
+`dev-kit check-commit` applies one Conventional Commits rule set in every repository, in the hook and in CI. It replaces commitlint plus `config-conventional` in the TypeScript repos and `.githooks/check_message.py` in the Python one, which had drifted apart (72 versus 100 characters, PR title only versus every commit). The rules:
+
+- the header is `<type>(<scope>)?!?: <subject>`, with type one of `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `perf`, `style`, `revert`;
+- the scope is optional and lowercase, `[a-z0-9./-]+`, so `deps-dev`, `guard/windows` and `v1.2` work and `Guard` does not;
+- the header is at most 100 characters, the subject is not empty and does not end with a period;
+- a header that starts with `Merge `, `Revert `, `fixup! ` or `squash! ` is exempt, so git's own messages and autosquash commits pass.
+
+Every problem in a header is reported at once, with the header itself, so the fix is one edit.
+
+The three modes:
+
+- `dev-kit check-commit <file>`: the `commit-msg` hook. Lines starting with `#` are dropped first, because git has not stripped its comment template yet when the hook runs.
+- `dev-kit check-commit --message "<text>"`: one header, for example a pull request title. Only the first non-blank line is checked.
+- `dev-kit check-commit --range <base>..<head>`: every commit in the range except merges. Commits whose author name or email contains `dependabot` are skipped, because Dependabot writes its own subjects and the check would only block its PRs.
+
+The hook, in `lefthook.yml` (call the bin through Node where `pnpm` may not be on the path):
+
+```yaml
+commit-msg:
+  commands:
+    message:
+      run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit {1}
+```
+
+The CI job, on `pull_request` only, checks the PR's commits and its title. The SHAs and the title reach the script through `env`, never through `${{ }}` inside `run:`: a PR title is text anyone can write, and expanding it into the shell would run it. The title step is skipped for `dependabot[bot]`, whose titles can exceed 100 characters; its commits are already skipped by author. The range needs the full history, so the checkout uses `fetch-depth: 0`.
+
+```yaml
+commits:
+  if: github.event_name == 'pull_request'
+  runs-on: ubuntu-latest
+  timeout-minutes: 10
+  steps:
+    - uses: actions/checkout@<sha> # v7
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-node@<sha> # v7
+      with:
+        node-version: 22
+    - run: pnpm install --frozen-lockfile
+    - env:
+        BASE: ${{ github.event.pull_request.base.sha }}
+        HEAD: ${{ github.event.pull_request.head.sha }}
+      run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit --range "$BASE..$HEAD"
+    - if: github.actor != 'dependabot[bot]'
+      env:
+        TITLE: ${{ github.event.pull_request.title }}
+      run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit --message "$TITLE"
+```
+
+This repository squash-merges with the PR title as the commit subject, so the title check is what keeps the history on `main` conventional; the range check keeps the branch history readable in review.
 
 ## Templates and sync-check
 
@@ -203,6 +258,16 @@ export default [{ plugins: { local: devKit }, rules: { "local/no-comments": "err
 - **Context rules are checks, not advice.** The compaction trap spread by copying a settings file, and tracker docs regrew after each cleanup. A failing CI step stops both; a paragraph in `CLAUDE.md` did not. The marker keeps the CLAUDE.md check language-neutral.
 - **Merged means the content is in the base.** `worktrees-clean` used to match the tip's commit subject against recent base subjects, and repeated subjects such as Dependabot's `chore(deps): bump ...` got unmerged branches force-deleted. A branch is now removed only when git shows that nothing it changes is missing from the base.
 - **Unified secret patterns.** The TypeScript repos contributed cloud and GitHub tokens, the Python repo contributed card-like numbers and Discord webhooks, and every repo now gets all of them.
+- **One commit-message rule set, as a command.** Three copies of the rule (commitlint config, a Python hook and a PR-title action) disagreed on the header limit and on what CI checked. The checker is a `dev-kit` subcommand so the hook and CI run the same code, and it is tested against a real git repository.
+- **Tags come from the version, not from a hand.** The release workflow decides from `package.json` and the remote's tags, through a unit-tested function, and never touches an existing tag.
+
+## Releases
+
+A release is a version bump merged into `main`. Open a PR that sets `version` in `package.json` and the pin in "Install"; once it merges, `.github/workflows/release.yml` runs `dev-kit release-tag`, which reads the version and asks the remote whether `v<version>` exists. When it does not, the workflow creates an annotated tag at the merge commit, pushes it and creates a GitHub release with generated notes. When it does, the run is a no-op: a tag is never moved, so a tag created by hand (as `v0.1.0` to `v0.4.0` were) stays where it is, and a second push with the same version does nothing. The runs are serialized by `concurrency: release`, so two merges cannot race for the same tag.
+
+Only that job has `contents: write`; the rest of CI stays read-only. Consumers still bump the pinned tag by hand, because Dependabot ignores git dependencies; the generated release notes list the merged PRs to read before bumping.
+
+Add a repository ruleset on `refs/tags/v*` that blocks updating and deleting tags (Settings, Rules, Rulesets, new tag ruleset targeting `v*`, with "Restrict updates" and "Restrict deletions", no bypass actors). Leave creation allowed, so the workflow's `GITHUB_TOKEN` can push a new tag without a bypass. The workflow never moves a tag; the ruleset makes sure nobody else does either.
 
 ## Develop
 
@@ -212,4 +277,4 @@ pnpm exec lefthook install
 pnpm check
 ```
 
-CI runs `pnpm test:coverage` on Ubuntu and Windows with Node 22 and 24. `vitest.config.ts` fails the run below the coverage thresholds. Each threshold is the highest whole percent below the lowest value the first CI run measured across those cells: statements 75.17%, branches 77.62%, functions 76.69%, lines 75.15%. Raise a threshold when coverage grows; never lower one to pass. Files that the tests reach only by spawning the CLI in a child process (`bin/`, `shim/`, `src/hooks/` and three of the `src/guardrails/` checks) read 0%, because the v8 provider does not instrument child processes.
+CI runs `pnpm test:coverage` on Ubuntu and Windows with Node 22 and 24. `vitest.config.ts` fails the run below the coverage thresholds. Each threshold started as the highest whole percent below the lowest value the first CI run measured across those cells: statements 75.17%, branches 77.62%, functions 76.69%, lines 75.15%. The commit-message and release-tag checks, tested in-process, raised local coverage to about 80.5%, 82.4%, 82.2% and 80.6%, and the thresholds moved up two points each, leaving a margin for the cells that measure lower. Raise a threshold when coverage grows; never lower one to pass. Files that the tests reach only by spawning the CLI in a child process (`bin/`, `shim/`, `src/hooks/` and three of the `src/guardrails/` checks) read 0%, because the v8 provider does not instrument child processes.
