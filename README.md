@@ -19,7 +19,7 @@ The package exports runnable tools and configuration, not domain libraries. A Py
 ## Install
 
 ```sh
-pnpm add -D --save-exact github:DiegoOrtizS/dev-kit#v0.3.0
+pnpm add -D --save-exact github:DiegoOrtizS/dev-kit#v0.4.0
 ```
 
 Pin a tag. Dependabot does not update git dependencies, so a kit upgrade is a manual PR in each consumer that bumps the tag. In the PR that bumps past v0.4.0, switch the `commit-msg` hook and the PR title step in CI to `dev-kit check-commit` (see "Commit messages") and drop `@commitlint/*` with `commitlint.config.mjs`, or `.githooks/check_message.py` in the Python repo.
