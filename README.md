@@ -109,7 +109,7 @@ Everything that differs between repositories lives in `.claude/guard.json`. Ever
 | `blockedPaths.commit`      | none                                             | Paths that `scan-secrets` refuses to commit.                                                                                                                                         |
 | `lint`                     | none                                             | First rule whose `match` fits the edited file runs. `{file}` is the file path; a leading `node` runs the current Node binary and is skipped when its script is missing.              |
 | `checks`                   | format, lint, typecheck, test via pnpm           | Steps for `dev-kit check-quiet`.                                                                                                                                                     |
-| `worktrees.base`           | `origin/main`                                    | Branch that `worktrees-clean` treats as merged.                                                                                                                                      |
+| `worktrees.base`           | `origin/main`                                    | Branch whose content `worktrees-clean` checks to decide what is merged.                                                                                                              |
 | `syncCheck.requiredAgents` | none                                             | Agents that `sync-check` requires in `.claude/agents/`.                                                                                                                              |
 | `syncCheck.agentOverrides` | none                                             | Per agent, the policy fields (`model`, `effort`, `maxTurns`, `tools`) that may differ from the template.                                                                             |
 | `syncCheck.docBudget`      | none                                             | Repo-relative path (forward slashes) to its maximum size in bytes, a positive whole number. `sync-check` fails when the file is bigger, or missing.                                  |
@@ -133,6 +133,8 @@ dev-kit sync-check
 ```
 
 From a git hook, call the bin through Node (`node node_modules/dev-kit/bin/dev-kit.mjs ...`) when `pnpm` might not be on the path, for example in a Python repository.
+
+`worktrees-clean` prints what it would remove, and `--apply` removes it. It never touches the current worktree, a worktree with uncommitted or untracked files, or a protected branch. A worktree or local branch counts as merged when its commit is already in `worktrees.base`, or when merging it into the base would leave the base tree unchanged (`git merge-tree --write-tree`), which is how squash merges are recognized. A branch whose changes conflict with the base, or were edited again on the base after the squash, is kept; delete it by hand. `--write-tree` needs git 2.38 or later. With older git the check fails, so only commits already in the base count as merged.
 
 ## Templates and sync-check
 
@@ -197,6 +199,7 @@ export default [{ plugins: { local: devKit }, rules: { "local/no-comments": "err
 - **One package, no build.** Plain `.mjs` with `.d.mts` types. Nothing to compile, nothing for pnpm to approve.
 - **Shims at stable paths.** `settings.json` keeps pointing at `tools/claude-hooks/`, the guard fails closed when the kit is missing, and upgrading means bumping one tag.
 - **Context rules are checks, not advice.** The compaction trap spread by copying a settings file, and tracker docs regrew after each cleanup. A failing CI step stops both; a paragraph in `CLAUDE.md` did not. The marker keeps the CLAUDE.md check language-neutral.
+- **Merged means the content is in the base.** `worktrees-clean` used to match the tip's commit subject against recent base subjects, and repeated subjects such as Dependabot's `chore(deps): bump ...` got unmerged branches force-deleted. A branch is now removed only when git shows that nothing it changes is missing from the base.
 - **Unified secret patterns.** The TypeScript repos contributed cloud and GitHub tokens, the Python repo contributed card-like numbers and Discord webhooks, and every repo now gets all of them.
 
 ## Develop
