@@ -5,7 +5,7 @@ export const TYPES = ["feat", "fix", "docs", "chore", "refactor", "test", "ci", 
 export const MAX_HEADER = 100;
 
 const HEADER = /^([a-z]+)(?:\(([^()]*)\))?(!?):(.*)$/;
-const SCOPE = /^[a-z0-9./-]+$/;
+const SCOPE = /^[a-z0-9._/-]+$/;
 const CAPS_WORD = /^[A-Z]{2,}(?![A-Za-z])/;
 const EXEMPT = /^(Merge branch |Merge pull request #|Merge remote-tracking branch |Revert "|fixup! |squash! )/;
 const USAGE = 'usage: dev-kit check-commit <file> | --message "<text>" | --range <base>..<head>';
@@ -26,7 +26,7 @@ export function headerProblems(header) {
   if (!match) return [...problems, `header must be <type>(scope)?!?: subject, with type one of ${TYPES.join(", ")}`];
   const [, type, scope, , rest] = match;
   if (!TYPES.includes(type)) problems.push(`unknown type "${type}", use one of ${TYPES.join(", ")}`);
-  if (scope !== undefined && !SCOPE.test(scope)) problems.push(`scope "${scope}" must be lowercase [a-z0-9./-]+`);
+  if (scope !== undefined && !SCOPE.test(scope)) problems.push(`scope "${scope}" must be lowercase [a-z0-9._/-]+`);
   const subject = rest.startsWith(" ") ? rest.slice(1) : "";
   if (subject.trim() === "") return [...problems, "subject must follow the colon and one space, and must not be empty"];
   if (/^[A-Z]/.test(subject) && !CAPS_WORD.test(subject)) {
