@@ -206,3 +206,5 @@ pnpm install
 pnpm exec lefthook install
 pnpm check
 ```
+
+CI runs `pnpm test:coverage` on Ubuntu and Windows with Node 22 and 24. `vitest.config.ts` fails the run below the coverage thresholds. Each threshold is the highest whole percent below the lowest value the first CI run measured across those cells: statements 75.17%, branches 77.62%, functions 76.69%, lines 75.15%. Raise a threshold when coverage grows; never lower one to pass. Files that the tests reach only by spawning the CLI in a child process (`bin/`, `shim/`, `src/hooks/` and three of the `src/guardrails/` checks) read 0%, because the v8 provider does not instrument child processes.
