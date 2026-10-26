@@ -5,7 +5,7 @@ import { ALLOW, deny } from "./verdict.mjs";
 
 const HOME = homedir();
 
-const WHOLE_DIRECTORY_SEGMENTS = new Set([".", "..", "*", ".*"]);
+const WHOLE_DIRECTORY_SEGMENTS = /^[*?.]+$/;
 const SENSITIVE_HOME_DIRECTORIES = [".ssh", ".aws", ".gnupg", ".config/gh", ".claude"];
 export const REMOVE_COMMANDS = new Set(["rm", "remove-item", "ri", "rd", "rmdir", "del", "erase"]);
 const CMD_REMOVE_COMMANDS = new Set(["rd", "rmdir", "del", "erase"]);
@@ -47,10 +47,19 @@ export function expandHome(target) {
   );
 }
 
+function globFreeBase(target) {
+  const expanded = expandHome(target);
+  const segments = expanded.split(/[\\/]/).filter(Boolean);
+  if (segments.length > 0 && segments.every((segment) => WHOLE_DIRECTORY_SEGMENTS.test(segment))) return null;
+  while (segments.length > 0 && WHOLE_DIRECTORY_SEGMENTS.test(segments.at(-1)) && !/^\.\.?$/.test(segments.at(-1))) {
+    segments.pop();
+  }
+  return `${/^[\\/]/.test(expanded) ? "/" : ""}${segments.join("/")}` || "/";
+}
+
 function targetsProtectedPath(target, context) {
-  const base = expandHome(target).replace(/[\\/]\*$/, "") || "/";
-  const segments = base.split(/[\\/]/).filter(Boolean);
-  if (segments.length > 0 && segments.every((segment) => WHOLE_DIRECTORY_SEGMENTS.has(segment))) return true;
+  const base = globFreeBase(target);
+  if (base === null) return true;
   const normalized = normalizePath(base);
   const absolute = normalized.startsWith("/") ? normalized : posix.join(normalizePath(context.cwd), normalized);
   const resolved = posix.normalize(absolute);
@@ -63,7 +72,7 @@ function expandCmdSwitches(args) {
   );
 }
 
-export function checkRemove(name, rawArgs, context) {
+export function removeTargets(name, rawArgs) {
   const args = CMD_REMOVE_COMMANDS.has(name) ? expandCmdSwitches(rawArgs) : rawArgs;
   const recursive = args.some(
     (argument) =>
@@ -73,10 +82,15 @@ export function checkRemove(name, rawArgs, context) {
       /^-r(ecurse)?$/i.test(argument) ||
       argument.toLowerCase() === "/s",
   );
-  if (!recursive) return ALLOW;
   const targets = args.filter(
     (argument) => !argument.startsWith("-") && !(CMD_REMOVE_COMMANDS.has(name) && CMD_SWITCH.test(argument)),
   );
+  return { recursive, targets };
+}
+
+export function checkRemove(name, rawArgs, context) {
+  const { recursive, targets } = removeTargets(name, rawArgs);
+  if (!recursive) return ALLOW;
   return targets.some((target) => targetsProtectedPath(target, context))
     ? deny(
         `Blocked: recursive delete of the repository root, the home folder, a drive or one of their ancestors (${name}).`,

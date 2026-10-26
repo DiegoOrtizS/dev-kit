@@ -15,7 +15,9 @@ import {
   touchesOwnLimits,
 } from "./env-files.mjs";
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
+import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
+import { checkPipes } from "./pipes.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
@@ -34,6 +36,7 @@ function checkFindExec(args, context, dialect) {
     const end = args.findIndex((argument, index) => index > i && (argument === ";" || argument === "+"));
     verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context, dialect));
   }
+  verdicts.push(checkRemove("find", ["-r", ...findDeleteTargets(args)], context));
   return firstBlock(verdicts);
 }
 
@@ -70,6 +73,7 @@ function checkScript(script, context, dialect = BASH) {
     checkAssignments(environmentCalls(script, dialect)),
     ...found.segments.map((words) => checkWords(words, context, dialect)),
     ...stdinScripts(found).map((stdin) => checkScript(stdin.script, context, stdin.dialect)),
+    checkPipes(found.pipes, context),
     checkWrittenPaths(found.written, context),
   ]);
 }

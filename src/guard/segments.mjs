@@ -31,6 +31,8 @@ function scan(command, dialect, found, start, closer) {
   let skipNextWord = false;
   let heredocDelimiterNext = false;
   let heredocs = [];
+  let segmentStart = start;
+  let pipedFrom = null;
 
   const finishWord = () => {
     if (heredocDelimiterNext) heredocs.push({ delimiter: word, owner: words });
@@ -44,11 +46,16 @@ function scan(command, dialect, found, start, closer) {
     word = "";
     inWord = false;
   };
-  const endSegment = () => {
+  const endSegment = (end, pipes = false) => {
     endWord();
     skipNextWord = false;
     heredocDelimiterNext = false;
-    if (words.length > 0) found.segments.push(words);
+    if (words.length > 0) {
+      found.segments.push(words);
+      if (pipedFrom !== null) found.pipes.push({ from: pipedFrom, to: words });
+    }
+    pipedFrom = pipes && words.length > 0 ? { words, raw: command.slice(segmentStart, end) } : null;
+    segmentStart = end + 1;
     words = [];
   };
   const startsRedirect = (char, next) =>
@@ -89,11 +96,11 @@ function scan(command, dialect, found, start, closer) {
       inWord = true;
       i += 1;
     } else if (char === "$" && next === "(") {
-      endSegment();
+      endSegment(i);
       depth += 1;
       i += 1;
     } else if ((closer === ")" && char === ")" && depth === 0) || (closer === "`" && char === "`")) {
-      endSegment();
+      endSegment(i);
       return i;
     } else if (startsRedirect(char, next)) {
       if (inWord && /^\d+$/.test(word)) {
@@ -107,7 +114,7 @@ function scan(command, dialect, found, start, closer) {
     } else if (dialect.breaks.has(char)) {
       if (char === "(") depth += 1;
       if (char === ")") depth = Math.max(0, depth - 1);
-      endSegment();
+      endSegment(i, char === "|" && next !== "|" && command[i - 1] !== "|");
       if (char === "\n" && heredocs.length > 0) {
         i = skipHeredocBodies(command, i, heredocs, found);
         heredocs = [];
@@ -119,12 +126,12 @@ function scan(command, dialect, found, start, closer) {
       inWord = true;
     }
   }
-  endSegment();
+  endSegment(command.length);
   return command.length;
 }
 
 export function splitSegments(command, dialect = BASH) {
-  const found = { segments: [], heredocs: [], written: [] };
+  const found = { segments: [], heredocs: [], written: [], pipes: [] };
   scan(command, dialect, found, 0, null);
   return found;
 }
