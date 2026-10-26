@@ -8,6 +8,7 @@ export const BASH = {
   escapesInDoubleQuotes: (char) => ['"', "\\", "$", "`", "\n"].includes(char),
   substitutionInQuotes: true,
   bashSyntax: true,
+  comments: true,
 };
 export const POWERSHELL = {
   escape: "`",
@@ -17,6 +18,7 @@ export const POWERSHELL = {
   escapesInDoubleQuotes: () => true,
   substitutionInQuotes: true,
   bashSyntax: false,
+  comments: true,
 };
 export const CMD = {
   escape: "^",

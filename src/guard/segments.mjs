@@ -57,10 +57,20 @@ function scan(command, dialect, found, start, closer) {
     if (words.length > 0) {
       found.segments.push(words);
       if (pipedFrom !== null) found.pipes.push({ from: pipedFrom, to: words });
+      pipedFrom = null;
     }
-    pipedFrom = pipes ? { words, raw: command.slice(segmentStart, end) } : null;
+    if (pipes) pipedFrom = { words, raw: command.slice(segmentStart, end) };
     segmentStart = end + 1;
     words = [];
+  };
+  const processSubstitution = (operator, begin) => {
+    const before = found.segments.length;
+    const end = scan(command, dialect, found, begin + 2, ")");
+    const inner = found.segments.slice(before);
+    const fed = { words: inner.length === 1 ? inner[0] : [], raw: command.slice(begin + 2, end) };
+    if (operator === "<") found.pipes.push({ from: fed, to: words });
+    else found.pipes.push({ from: { words, raw: command.slice(segmentStart, begin) }, to: fed.words });
+    return end;
   };
   const startsRedirect = (char, next) =>
     char === "<" || char === ">" || (dialect.bashSyntax && char === "&" && next === ">");
@@ -106,6 +116,11 @@ function scan(command, dialect, found, start, closer) {
     } else if ((closer === ")" && char === ")" && depth === 0) || (closer === "`" && char === "`")) {
       endSegment(i);
       return i;
+    } else if (dialect.bashSyntax && !inWord && (char === "<" || char === ">") && next === "(") {
+      i = processSubstitution(char, i);
+    } else if (dialect.comments && !inWord && char === "#") {
+      const lineEnd = command.indexOf("\n", i);
+      i = (lineEnd === -1 ? command.length : lineEnd) - 1;
     } else if (startsRedirect(char, next)) {
       if (inWord && /^\d+$/.test(word)) {
         word = "";

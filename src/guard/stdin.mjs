@@ -1,8 +1,9 @@
-import { POWERSHELL, commandName, dialectOfShell, shellReadsStdin } from "./dialects.mjs";
+import { BASH, POWERSHELL, commandName, dialectOfShell, shellReadsStdin } from "./dialects.mjs";
 import { stripPrefixes } from "./prefixes.mjs";
 import { deny } from "./verdict.mjs";
 
 export const EXPRESSION_RUNNERS = new Set(["iex", "invoke-expression"]);
+const SOURCERS = new Set(["source", "."]);
 const PRINTERS = new Set(["echo", "printf", "write-output"]);
 
 export function unreadableScript(name) {
@@ -16,6 +17,7 @@ function consumerDialect(words) {
   if (command === undefined) return null;
   const name = commandName(command);
   if (EXPRESSION_RUNNERS.has(name)) return POWERSHELL;
+  if (SOURCERS.has(name) && args.length === 0) return BASH;
   return shellReadsStdin(name, args) ? dialectOfShell(name) : null;
 }
 
