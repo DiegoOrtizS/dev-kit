@@ -39,7 +39,7 @@ tools/claude-hooks/lint-after-edit.mjs <- shim/lint-after-edit.mjs
 "hooks": {
   "PreToolUse": [
     {
-      "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit",
+      "matcher": "Bash|PowerShell|Monitor|Write|Edit|MultiEdit|NotebookEdit",
       "hooks": [{ "type": "command", "command": "node \"$(git rev-parse --show-toplevel)/tools/claude-hooks/guard.mjs\" || exit 2" }]
     }
   ],
@@ -120,6 +120,8 @@ The guard always blocks these, whatever the config says: force pushes, `--all`/`
 
 Edits to the agent's own limits (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/guard.json`, `tools/claude-hooks/`) through Write/Edit or `cp`/`mv` return an `ask` decision, so Claude Code prompts the user even when the call would otherwise be allowed.
 
+Every tool that runs a script or writes text goes through the hook. `Bash`, `PowerShell` and `Monitor` commands are analyzed as scripts (`Monitor` streams a Bash script, so it gets the Bash dialect); the text written by `Write`, `Edit`, `MultiEdit` and `NotebookEdit` (`new_source`) is scanned for secrets. A tool missing from the `PreToolUse` matcher is never analyzed, which is why `sync-check` fails when a consumer's matcher lacks a tool the template lists.
+
 Secret patterns aim for few false positives. A card number must pass Luhn and must not be a public test card. A Discord webhook needs a snowflake ID and a full-length token, with or without an API version in the path. An AWS secret access key is caught only next to its variable name with a 40-character value, so templated `${{ secrets.* }}` references pass. Payment keys match `sk_live_` and `rk_live_` (Stripe and Culqi shapes), never `pk_live_` or test keys. npm, Anthropic and OpenAI project tokens match their published prefixes. Binary files are skipped.
 
 CI runs gitleaks over the full history on every pull request and push to `main`, next to `scan-secrets --all`, because this repository is public.
@@ -157,6 +159,7 @@ Copy what the repository needs, then adapt the body of each agent to the repo's 
 - a `CLAUDE.md` (root and `.claude/`, each one present) whose first two sections, outside code blocks, are not the limits and "Where to write". Spanish headings ("Prohibido", "Dónde se escribe") are accepted for repositories documented in Spanish;
 - no context budget section: at least one `CLAUDE.md` (root or `.claude/`) must carry `<!-- dev-kit:context-budget -->` on its own line right under a `## ` heading, outside code blocks. The heading is free text, so "Context budget" and "Presupuesto de contexto" both pass. One file is enough because Claude Code loads both. There is no opt-out;
 - a `.claude/settings.json` that sets `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (any value), sets `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` below 300000 or to something that is not a whole number, or is not valid JSON. A missing file or an unset window passes. `.claude/settings.local.json` is personal and gitignored, so it is never checked;
+- a `.claude/settings.json` whose `PreToolUse` entries running `tools/claude-hooks/guard.mjs` do not, together, match every tool in the template matcher (`Bash|PowerShell|Monitor|Write|Edit|MultiEdit|NotebookEdit`), or that has no such entry. A matcher is a regular expression over the tool name; `*` or an empty matcher covers everything. Settings that do not parse are reported once, by the previous check;
 - a file listed in `syncCheck.docBudget` that is bigger than its budget, or missing. Size is UTF-8 bytes after dropping a BOM and turning CRLF into LF, so Windows and Linux agree. A missing file fails instead of being skipped, so a renamed tracker cannot escape its budget silently: move the entry with the file.
 
 Add the marker like this (the bullets come from `templates/CLAUDE.md`; translate them for a Spanish repository):

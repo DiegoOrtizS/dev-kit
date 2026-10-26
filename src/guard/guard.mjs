@@ -12,7 +12,7 @@ import { asAssignment, splitSegments, stripPrefixes } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
-const SCRIPT_TOOLS = new Set(["Bash", "PowerShell"]);
+const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly", "local"]);
@@ -58,6 +58,7 @@ function checkScript(script, context, dialect = BASH) {
 function collectWrittenText(toolName, toolInput) {
   if (toolName === "Write") return [toolInput.content];
   if (toolName === "Edit") return [toolInput.new_string];
+  if (toolName === "NotebookEdit") return [toolInput.new_source];
   if (toolName === "MultiEdit" && Array.isArray(toolInput.edits)) {
     return toolInput.edits.map((edit) => edit?.new_string);
   }
