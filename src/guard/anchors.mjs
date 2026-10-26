@@ -4,7 +4,7 @@ import { setterAssignments } from "./env-setters.mjs";
 import { REMOVE_COMMANDS } from "./remove.mjs";
 
 export const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly", "local"]);
-const ANCHORS = new Set(["git", "gh", "sst", "lefthook", "find", "eval"]);
+const ANCHORS = new Set(["git", "gh", "sst", "lefthook", "find", "eval", "iex", "invoke-expression"]);
 const PRINTERS = new Set(["echo", "printf", "write-output", "write-host", "man", "which", "where", "whereis"]);
 
 function isAnchor(word) {

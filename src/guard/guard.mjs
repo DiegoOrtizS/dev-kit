@@ -23,7 +23,7 @@ import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
 import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
-import { stdinScripts } from "./stdin.mjs";
+import { stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
@@ -69,10 +69,12 @@ function checkWords(words, context, dialect) {
 
 function checkScript(script, context, dialect = BASH) {
   const found = splitSegments(script, dialect);
+  const stdin = stdinScripts(found, dialect);
   return firstBlock([
     checkAssignments(environmentCalls(script, dialect)),
     ...found.segments.map((words) => checkWords(words, context, dialect)),
-    ...stdinScripts(found).map((stdin) => checkScript(stdin.script, context, stdin.dialect)),
+    ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
+    ...stdin.opaque.map(unreadableScript),
     checkPipes(found.pipes, context),
     checkWrittenPaths(found.written, context),
   ]);

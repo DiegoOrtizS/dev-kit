@@ -30,15 +30,18 @@ function scan(command, dialect, found, start, closer) {
   let depth = 0;
   let skipNextWord = false;
   let heredocDelimiterNext = false;
+  let hereStringNext = false;
   let heredocs = [];
   let segmentStart = start;
   let pipedFrom = null;
 
   const finishWord = () => {
     if (heredocDelimiterNext) heredocs.push({ delimiter: word, owner: words });
+    else if (hereStringNext) found.heredocs.push({ owner: words, body: word });
     else if (skipNextWord) found.written.push(word);
     else words.push(word);
     heredocDelimiterNext = false;
+    hereStringNext = false;
     skipNextWord = false;
   };
   const endWord = () => {
@@ -50,11 +53,12 @@ function scan(command, dialect, found, start, closer) {
     endWord();
     skipNextWord = false;
     heredocDelimiterNext = false;
+    hereStringNext = false;
     if (words.length > 0) {
       found.segments.push(words);
       if (pipedFrom !== null) found.pipes.push({ from: pipedFrom, to: words });
     }
-    pipedFrom = pipes && words.length > 0 ? { words, raw: command.slice(segmentStart, end) } : null;
+    pipedFrom = pipes ? { words, raw: command.slice(segmentStart, end) } : null;
     segmentStart = end + 1;
     words = [];
   };
@@ -109,7 +113,8 @@ function scan(command, dialect, found, start, closer) {
       } else endWord();
       const [operator] = REDIRECT_OPERATOR.exec(command.slice(i));
       i += operator.length - 1;
-      if (dialect.bashSyntax && operator.startsWith("<<") && operator !== "<<<") heredocDelimiterNext = true;
+      if (dialect.bashSyntax && operator === "<<<") hereStringNext = true;
+      else if (dialect.bashSyntax && operator.startsWith("<<")) heredocDelimiterNext = true;
       else if (!operator.startsWith("<")) skipNextWord = true;
     } else if (dialect.breaks.has(char)) {
       if (char === "(") depth += 1;
