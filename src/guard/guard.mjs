@@ -8,8 +8,10 @@ import { OWN_LIMITS_ASK, checkFileAccess, isFileCommand, matchesBlockedPath, tou
 import { checkGh } from "./gh.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
-import { asAssignment, splitSegments, stripPrefixes } from "./segments.mjs";
+import { asAssignment, stripPrefixes } from "./prefixes.mjs";
+import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
+import { stdinScripts } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
@@ -65,10 +67,10 @@ function checkWords(words, context) {
 }
 
 function checkScript(script, context, dialect = BASH) {
-  const { segments, stdinScripts } = splitSegments(script, dialect);
+  const found = splitSegments(script, dialect);
   return firstBlock([
-    ...segments.map((words) => checkWords(words, context)),
-    ...stdinScripts.map((stdin) => checkScript(stdin.script, context, stdin.dialect)),
+    ...found.segments.map((words) => checkWords(words, context)),
+    ...stdinScripts(found).map((stdin) => checkScript(stdin.script, context, stdin.dialect)),
   ]);
 }
 
