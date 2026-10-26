@@ -122,6 +122,7 @@ function scan(command, dialect, found, start, closer) {
       endSegment(i, char === "|" && next !== "|" && command[i - 1] !== "|");
       if (char === "\n" && heredocs.length > 0) {
         i = skipHeredocBodies(command, i, heredocs, found);
+        segmentStart = i + 1;
         heredocs = [];
       }
     } else if (/\s/.test(char) || dialect.whitespace.has(char)) {

@@ -57,6 +57,7 @@ describe("shells reading their script from stdin", () => {
     "cat <<EOF | tee x\ngit push -f\nEOF",
     "echo 'git push -f' | grep push",
     "ls | bash -c 'cat'",
+    "cat <<EOF\n$HOME\nEOF\necho 'echo hi' | bash",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
   });
