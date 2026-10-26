@@ -17,8 +17,29 @@ describe("findSecrets", () => {
     ],
     ["cloudflare user token", sample("cf", "ut_", "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH")],
     ["google client secret", sample("GOC", "SPX-", "abcdefghijklmnopqrstuvwxyz12")],
+    ["aws secret access key", sample("AWS_SECRET", "_ACCESS_KEY=", "wJalrXUtnFEMI/K7MDENG+bPxRfiCY", "0123456789")],
+    [
+      "aws secret access key in yaml",
+      sample("AWS_SECRET", "_ACCESS_KEY: ", "wJalrXUtnFEMI/K7MDENG+bPxRfiCY", "0123456789"),
+    ],
+    ["live payment secret key", sample("sk", "_live_", "abcdefghijklmnop0123")],
+    ["live restricted payment key", sample("rk", "_live_", "abcdefghijklmnop0123")],
+    ["npm token", sample("npm", "_", "abcdefghijklmnopqrstuvwxyz0123456789")],
+    ["anthropic api key", sample("sk-", "ant-", "api03-", "aB3_-".repeat(10))],
+    ["openai project key", sample("sk-", "proj-", "aB3_-".repeat(10))],
   ])("detects a %s", (_label, text) => {
     expect(findSecrets(`const value = "${text}";`)).toHaveLength(1);
+  });
+
+  it.each([
+    ["a templated aws secret", sample("AWS_SECRET", "_ACCESS_KEY=", "$", "{{ secrets.AWS_SECRET_ACCESS_KEY }}")],
+    ["an aws secret variable name alone", sample("AWS_SECRET", "_ACCESS_KEY=")],
+    ["a public payment key", sample("pk", "_live_", "abcdefghijklmnop0123")],
+    ["a payment test key", sample("sk", "_test_", "abcdefghijklmnop0123")],
+    ["a short npm script name", "npm_config_registry"],
+    ["an identifier that ends in sk_live_", sample("mask", "_live_", "abcdefghijklmnop0123")],
+  ])("ignores %s", (_label, text) => {
+    expect(findSecrets(`const value = "${text}";`)).toEqual([]);
   });
 
   it("ignores empty or templated cloudflare variables and ordinary code", () => {
@@ -69,6 +90,7 @@ describe("findSecrets from the Python bot", () => {
   it.each([
     ["discord webhook", webhook("discord.com")],
     ["legacy discord webhook", webhook("discordapp.com")],
+    ["versioned discord webhook", webhook("discord.com").replace("/api/", "/api/v10/")],
     ["card number with spaces", grouped(card, " ")],
     ["card number with dashes", grouped(card, "-")],
     ["card number without separators", card],
