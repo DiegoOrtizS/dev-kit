@@ -9,7 +9,7 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.mjs", "bin/**/*.mjs", "shim/**/*.mjs"],
       reporter: ["text-summary"],
-      thresholds: { statements: 77, branches: 79, functions: 79, lines: 77 },
+      thresholds: { statements: 80, branches: 82, functions: 81, lines: 80 },
     },
   },
 });
