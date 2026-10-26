@@ -111,7 +111,11 @@ function powershellScript(args) {
 
 export function shellReadsStdin(name, args) {
   if (dialectOfShell(name) === null || shellScript(name, args) !== null) return false;
-  if (POWERSHELLS.has(name)) return powershellPositionals(args).every((argument) => argument === "-");
+  if (POWERSHELLS.has(name)) {
+    const fileIndex = args.findIndex((argument) => "file".startsWith(powershellFlagName(argument) ?? "-"));
+    if (fileIndex !== -1 && args[fileIndex + 1] !== undefined && args[fileIndex + 1] !== "-") return false;
+    return powershellPositionals(args).every((argument) => argument === "-");
+  }
   if (name === "cmd") return args.every((argument) => argument.startsWith("/"));
   return args.every((argument, index) => /^[-+]/.test(argument) || POSIX_VALUED_FLAGS.has(args[index - 1] ?? ""));
 }

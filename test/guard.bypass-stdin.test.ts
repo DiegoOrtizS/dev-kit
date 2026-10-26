@@ -205,3 +205,18 @@ describe("Invoke-Expression", () => {
     expect(powershell(command).block).toBe(false);
   });
 });
+
+describe("a PowerShell script file fed by a pipe", () => {
+  it.each([
+    "Get-Content data | pwsh -File tools/x.ps1",
+    "cat data.txt | powershell -f x.ps1",
+    "echo x | pwsh -NoProfile -File x.ps1 -Arg y",
+    "echo x | pwsh tools/x.ps1",
+  ])("allows %s", (command) => {
+    expect(bash(command).block).toBe(false);
+  });
+
+  it.each(["echo 'git push -f' | pwsh -File -", "Get-Content x | pwsh -File -"])("still blocks %s", (command) => {
+    expect(bash(command).block).toBe(true);
+  });
+});
