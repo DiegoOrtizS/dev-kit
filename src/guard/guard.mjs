@@ -19,7 +19,7 @@ import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
 import { checkPipes } from "./pipes.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
-import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
+import { REMOVE_COMMANDS, checkDeleteAfterChdir, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
 import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
@@ -84,6 +84,7 @@ function checkScript(script, context, dialect = BASH) {
     ...stdin.opaque.map(unreadableScript),
     checkPipes(found.pipes, context),
     checkWrittenPaths(found.written, context),
+    checkDeleteAfterChdir(found.segments),
   ]);
 }
 

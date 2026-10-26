@@ -1,7 +1,15 @@
 import { homedir } from "node:os";
 import { posix } from "node:path";
+import { commandName } from "./dialects.mjs";
 import { isLongOption, isShortFlagCluster } from "./options.mjs";
-import { ALLOW, deny } from "./verdict.mjs";
+import { stripPrefixes } from "./prefixes.mjs";
+import { ALLOW, ask, deny } from "./verdict.mjs";
+
+const DIRECTORY_CHANGERS = new Set(["cd", "pushd", "chdir", "set-location", "sl", "push-location"]);
+const ANCHORED_TARGET = /^([\\/]|[A-Za-z]:|~|\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:)/i;
+const CHDIR_DELETE_ASK = ask(
+  "A recursive delete follows a directory change in the same command, so its relative paths are judged against the wrong folder. The repo owner must confirm it.",
+);
 
 const HOME = homedir();
 
@@ -86,6 +94,21 @@ export function removeTargets(name, rawArgs) {
     (argument) => !argument.startsWith("-") && !(CMD_REMOVE_COMMANDS.has(name) && CMD_SWITCH.test(argument)),
   );
   return { recursive, targets };
+}
+
+export function checkDeleteAfterChdir(segments) {
+  let changed = false;
+  for (const words of segments) {
+    const [command, ...args] = stripPrefixes(words).rest;
+    if (command === undefined) continue;
+    const name = commandName(command);
+    if (DIRECTORY_CHANGERS.has(name)) changed = true;
+    else if (changed && REMOVE_COMMANDS.has(name)) {
+      const { recursive, targets } = removeTargets(name, args);
+      if (recursive && targets.some((target) => !ANCHORED_TARGET.test(target))) return CHDIR_DELETE_ASK;
+    }
+  }
+  return ALLOW;
 }
 
 export function checkRemove(name, rawArgs, context) {

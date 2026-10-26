@@ -150,3 +150,39 @@ describe("recursive delete fed by a pipe", () => {
     expect(bash("cat targets.txt | xargs rm -rf").reason).toMatch(/cannot read/);
   });
 });
+
+describe("recursive delete after a directory change", () => {
+  it.each([
+    "cd repos && rm -rf peruanito",
+    "cd .. ; rm -rf dev-kit",
+    "cd ..\nrm -rf dev-kit",
+    "pushd x && rm -rf build",
+    "cd x; rd /s /q y",
+    "bash -c 'cd x && rm -rf y'",
+    "cd && rm -rf repos",
+  ])("asks before %s", (command) => {
+    expect(bash(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each([
+    "Set-Location .. ; Remove-Item -Recurse x",
+    "sl x; ri -r y",
+    "Push-Location x; Remove-Item -Recurse -Force y",
+  ])("asks before %s in powershell", (command) => {
+    expect(powershell(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each([
+    "cd x && rm -rf /tmp/y",
+    "rm -rf build && cd x",
+    "cd x && rm -f y",
+    "cd x && git status",
+    "cd x && rm -rf ~/.cache/y",
+  ])("allows %s", (command) => {
+    expect(bash(command)).toEqual({ block: false });
+  });
+
+  it("still blocks a protected absolute target after cd", () => {
+    expect(bash("cd x && rm -rf ~").block).toBe(true);
+  });
+});
