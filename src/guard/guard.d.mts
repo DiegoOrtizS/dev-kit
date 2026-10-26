@@ -12,6 +12,12 @@ export interface Verdict {
   reason?: string;
 }
 
+export interface GuardContext {
+  cwd: string;
+  repoRoot: string;
+  config: DevKitConfig;
+}
+
 export interface EvaluateOptions {
   repoRoot?: string;
   config?: DevKitConfig;

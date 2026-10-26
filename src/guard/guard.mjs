@@ -3,61 +3,97 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
 import { findSecrets } from "../guardrails/rules.mjs";
+import { ENV_EXPORTERS, launchedWords, reanchored } from "./anchors.mjs";
 import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
-import { OWN_LIMITS_ASK, checkFileAccess, matchesBlockedPath, touchesOwnLimits } from "./env-files.mjs";
+import {
+  GIT_HOOKS_ASK,
+  OWN_LIMITS_ASK,
+  checkFileAccess,
+  checkWrittenPaths,
+  matchesBlockedPath,
+  touchesGitHooks,
+  touchesOwnLimits,
+} from "./env-files.mjs";
+import { environmentCalls, setterAssignments } from "./env-setters.mjs";
+import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
+import { checkInlineCode } from "./interpreters.mjs";
+import { checkPipes } from "./pipes.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
-import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
-import { asAssignment, splitSegments, stripPrefixes } from "./segments.mjs";
+import { REMOVE_COMMANDS, checkDeleteAfterChdir, checkRemove } from "./remove.mjs";
+import { asAssignment, stripPrefixes } from "./prefixes.mjs";
+import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
+import { isDynamic, isDynamicCommand, stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
-const SCRIPT_TOOLS = new Set(["Bash", "PowerShell"]);
+const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
-const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly", "local"]);
-
-function checkFindExec(args, context) {
+function checkFindExec(args, context, dialect) {
   const verdicts = [];
   for (let i = 0; i < args.length; i += 1) {
     if (!["-exec", "-execdir", "-ok", "-okdir"].includes(args[i])) continue;
     const end = args.findIndex((argument, index) => index > i && (argument === ";" || argument === "+"));
-    verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context));
+    verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context, dialect));
   }
+  verdicts.push(checkRemove("find", ["-r", ...findDeleteTargets(args)], context));
   return firstBlock(verdicts);
 }
 
-function checkWords(words, context) {
+function checkWords(words, context, dialect = BASH) {
   const { assignments, rest } = stripPrefixes(words);
   const assignmentVerdict = checkAssignments(assignments);
   if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
   const [command, ...args] = rest;
+  if (isDynamicCommand(command, args, dialect)) return unreadableScript(command);
   const name = commandName(command);
+  const launched = launchedWords(name, args);
+  if (launched !== null) return checkWords(launched, context, dialect);
+  const wrapped = reanchored(rest, dialect);
+  if (wrapped !== null) return checkWords(wrapped, context, dialect);
   if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));
+  const setters = setterAssignments(name, args, dialect);
+  if (setters !== null && setters.length > 0) return checkAssignments(setters);
   const nested = scriptFromShell(name, args);
-  if (nested !== null) return checkScript(nested.script, context, nested.dialect);
-  if (name === "eval") return checkScript(args.join(" "), context);
+  if (nested !== null) {
+    return isDynamic(nested.script) ? unreadableScript(name) : checkScript(nested.script, context, nested.dialect);
+  }
+  if (name === "eval") {
+    return isDynamic(args.join(" ")) ? unreadableScript(name) : checkScript(args.join(" "), context, dialect);
+  }
+  if (name === "lefthook" && args.includes("uninstall")) {
+    return deny("Blocked: lefthook uninstall removes the git hooks.");
+  }
   return firstBlock([
     name === "git" ? checkGit(args, context) : ALLOW,
     name === "gh" ? checkGh(args) : ALLOW,
-    name === "find" ? checkFindExec(args, context) : ALLOW,
+    name === "find" ? checkFindExec(args, context, dialect) : ALLOW,
     checkSst(rest),
     checkFileAccess(name, args, context),
     REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context) : ALLOW,
+    checkInlineCode(name, args),
   ]);
 }
 
 function checkScript(script, context, dialect = BASH) {
-  const { segments, stdinScripts } = splitSegments(script, dialect);
+  const found = splitSegments(script, dialect);
+  const stdin = stdinScripts(found, dialect);
   return firstBlock([
-    ...segments.map((words) => checkWords(words, context)),
-    ...stdinScripts.map((stdin) => checkScript(stdin.script, context, stdin.dialect)),
+    checkAssignments(environmentCalls(script, dialect)),
+    ...found.segments.map((words) => checkWords(words, context, dialect)),
+    ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
+    ...stdin.opaque.map(unreadableScript),
+    checkPipes(found.pipes, context),
+    checkWrittenPaths(found.written, context),
+    checkDeleteAfterChdir(found.segments),
   ]);
 }
 
 function collectWrittenText(toolName, toolInput) {
   if (toolName === "Write") return [toolInput.content];
   if (toolName === "Edit") return [toolInput.new_string];
+  if (toolName === "NotebookEdit") return [toolInput.new_source];
   if (toolName === "MultiEdit" && Array.isArray(toolInput.edits)) {
     return toolInput.edits.map((edit) => edit?.new_string);
   }
@@ -88,6 +124,7 @@ function checkFilePath(toolName, input, context) {
     return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
   }
   if (WRITE_TOOLS.has(toolName) && touchesOwnLimits(path, context)) return OWN_LIMITS_ASK;
+  if (WRITE_TOOLS.has(toolName) && touchesGitHooks(path)) return GIT_HOOKS_ASK;
   return ALLOW;
 }
 

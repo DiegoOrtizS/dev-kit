@@ -4,12 +4,18 @@ import { ALLOW, deny } from "./verdict.mjs";
 
 const HOOK_DISABLING_ASSIGNMENT = [
   /^LEFTHOOK=(0|false)$/i,
+  /^HUSKY=0$/i,
   /^LEFTHOOK_EXCLUDE=/i,
   /^GIT_CONFIG_(PARAMETERS|COUNT|GLOBAL|SYSTEM)=/i,
   /^GIT_CONFIG_(KEY|VALUE)_\d+=/i,
+  /^(HOME|XDG_CONFIG_HOME)=/i,
 ];
 const HOOKS_PATH_CONFIG = /^core\.hookspath(=|$)/i;
 const REMOTE_PUSH_CONFIG = /^remote\.[^=]*\.push(=|$)/i;
+const ALIAS_OR_INCLUDE_CONFIG = /^(alias\.|include\.path(=|$)|includeif\.)/i;
+const ALIAS_BLOCKED = deny(
+  "Blocked: a git alias or include set through -c, --config-env or git config can hide a forbidden command.",
+);
 
 export function checkAssignments(assignments) {
   const disabling = assignments.find((assignment) =>
@@ -64,6 +70,7 @@ export function checkGit(args, context) {
   if (configEntries.some((entry) => REMOTE_PUSH_CONFIG.test(entry))) {
     return deny("Blocked: changing remote.*.push can redirect a push to a protected branch.");
   }
+  if (configEntries.some((entry) => ALIAS_OR_INCLUDE_CONFIG.test(entry))) return ALIAS_BLOCKED;
   if (!subcommand) return ALLOW;
   if (subcommand === "push") {
     const verdict = checkGitPush(rest, context);
@@ -73,10 +80,11 @@ export function checkGit(args, context) {
   if (options.some((option) => isLongOption(option, "no-verify", 4))) {
     return deny(`Blocked: git ${subcommand} --no-verify skips the git hooks.`);
   }
-  if (subcommand === "config") {
-    if (!isGitConfigRead(parseGitConfig(rest)) && rest.some((argument) => HOOKS_PATH_CONFIG.test(argument))) {
+  if (subcommand === "config" && !isGitConfigRead(parseGitConfig(rest))) {
+    if (rest.some((argument) => HOOKS_PATH_CONFIG.test(argument))) {
       return deny("Blocked: changing core.hooksPath skips the git hooks.");
     }
+    if (rest.some((argument) => ALIAS_OR_INCLUDE_CONFIG.test(argument))) return ALIAS_BLOCKED;
   }
   if (subcommand === "commit" && options.some((option) => isShortFlagCluster(option, "n"))) {
     return deny("Blocked: git commit -n skips the git hooks.");

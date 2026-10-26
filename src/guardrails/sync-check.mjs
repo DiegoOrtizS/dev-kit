@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkHookMatchers } from "./sync-hooks.mjs";
 
 const KIT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHIMS = ["guard.mjs", "lint-after-edit.mjs"];
@@ -190,6 +191,7 @@ export function syncProblems(repoRoot, config) {
     ...checkClaudeMd(repoRoot),
     ...checkContextSection(repoRoot),
     ...checkSettings(repoRoot),
+    ...checkHookMatchers(repoRoot),
     ...checkDocBudget(repoRoot, config.syncCheck.docBudget),
   ];
 }
