@@ -45,8 +45,39 @@ describe("NotebookEdit sources", () => {
   });
 });
 
-describe("tool coverage", () => {
-  it("still allows an ordinary Bash command", () => {
-    expect(bash("pnpm check").block).toBe(false);
+describe("unknown wrappers", () => {
+  it.each([
+    "pnpm exec git push -f",
+    "npx git push -f origin x",
+    "winpty git push -f",
+    "stdbuf -o0 git push --force",
+    "pnpm dlx foo rm -rf ~",
+    "docker run img git push origin main",
+    "winpty pwsh -c 'git push -f'",
+    "npx cross-env FOO=1 git push -f",
+    "pnpm exec git.exe push -f",
+    "yarn remove-item -recurse -force ~",
+    "pnpm exec sst deploy --stage production",
+  ])("blocks %s", (command) => {
+    expect(bash(command).block).toBe(true);
+  });
+
+  it.each([
+    "pnpm exec dev-kit sync-check",
+    "pnpm exec eslint . --max-warnings=0",
+    "pnpm exec vitest run test/guard.test.ts",
+    "echo git push -f",
+    "printf 'git push -f\\n'",
+    "grep -r 'rm -rf' src",
+    "grep git push src/x.mjs",
+    "which git",
+    "man git push",
+    "pnpm exec git status",
+    "npx prettier --check .",
+    "git commit -m 'rm -rf cleanup'",
+    "gh pr create --title 'git push -f'",
+    "pnpm check",
+  ])("allows %s", (command) => {
+    expect(bash(command).block).toBe(false);
   });
 });

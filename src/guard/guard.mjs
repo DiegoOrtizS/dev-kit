@@ -3,8 +3,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
 import { findSecrets } from "../guardrails/rules.mjs";
-import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
-import { OWN_LIMITS_ASK, checkFileAccess, matchesBlockedPath, touchesOwnLimits } from "./env-files.mjs";
+import { BASH, POWERSHELL, commandName, dialectOfShell, scriptFromShell } from "./dialects.mjs";
+import { OWN_LIMITS_ASK, checkFileAccess, isFileCommand, matchesBlockedPath, touchesOwnLimits } from "./env-files.mjs";
 import { checkGh } from "./gh.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
@@ -16,6 +16,21 @@ const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly", "local"]);
+const ANCHORS = new Set(["git", "gh", "sst", "lefthook", "find", "eval"]);
+const PRINTERS = new Set(["echo", "printf", "write-output", "write-host", "man", "which", "where", "whereis"]);
+
+function isAnchor(name) {
+  return ANCHORS.has(name) || REMOVE_COMMANDS.has(name) || dialectOfShell(name) !== null;
+}
+
+function isKnownCommand(name) {
+  return isAnchor(name) || ENV_EXPORTERS.has(name) || PRINTERS.has(name) || isFileCommand(name);
+}
+
+function reanchored(rest) {
+  const index = rest.findIndex((word, position) => position > 0 && isAnchor(commandName(word)));
+  return index === -1 ? null : rest.slice(index);
+}
 
 function checkFindExec(args, context) {
   const verdicts = [];
@@ -33,6 +48,8 @@ function checkWords(words, context) {
   if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
   const [command, ...args] = rest;
   const name = commandName(command);
+  const wrapped = isKnownCommand(name) ? null : reanchored(rest);
+  if (wrapped !== null) return checkWords(wrapped, context);
   if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));
   const nested = scriptFromShell(name, args);
   if (nested !== null) return checkScript(nested.script, context, nested.dialect);

@@ -122,6 +122,8 @@ Edits to the agent's own limits (`.claude/settings.json`, `.claude/settings.loca
 
 Every tool that runs a script or writes text goes through the hook. `Bash`, `PowerShell` and `Monitor` commands are analyzed as scripts (`Monitor` streams a Bash script, so it gets the Bash dialect); the text written by `Write`, `Edit`, `MultiEdit` and `NotebookEdit` (`new_source`) is scanned for secrets. A tool missing from the `PreToolUse` matcher is never analyzed, which is why `sync-check` fails when a consumer's matcher lacks a tool the template lists.
 
+A segment whose first word the guard does not know (`pnpm exec`, `npx`, `winpty`, `stdbuf`, `docker run`, any launcher) is re-checked from its first `git`, `gh`, `sst`, `lefthook`, `find`, `eval`, delete command or shell, so `pnpm exec git push -f` reads as `git push -f`. Known commands are never re-anchored: `echo git push -f`, `grep git push src`, `man git push` and `git commit -m 'rm -rf cleanup'` stay allowed, and so does `pnpm exec dev-kit …` or `pnpm exec eslint …`, whose arguments contain no anchor.
+
 Secret patterns aim for few false positives. A card number must pass Luhn and must not be a public test card. A Discord webhook needs a snowflake ID and a full-length token, with or without an API version in the path. An AWS secret access key is caught only next to its variable name with a 40-character value, so templated `${{ secrets.* }}` references pass. Payment keys match `sk_live_` and `rk_live_` (Stripe and Culqi shapes), never `pk_live_` or test keys. npm, Anthropic and OpenAI project tokens match their published prefixes. Binary files are skipped.
 
 CI runs gitleaks over the full history on every pull request and push to `main`, next to `scan-secrets --all`, because this repository is public.

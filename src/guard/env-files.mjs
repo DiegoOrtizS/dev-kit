@@ -73,6 +73,10 @@ export const OWN_LIMITS_ASK = ask(
   "This changes the agent's own limits (.claude/settings.json, .claude/guard.json or tools/claude-hooks/). The repo owner must approve it.",
 );
 
+export function isFileCommand(name) {
+  return FILE_READERS.has(name) || FILE_MOVERS.has(name);
+}
+
 function inspectedArguments(name, args) {
   const positionals = args.filter((argument) => !argument.startsWith("-"));
   if (FILE_MOVERS.has(name)) return { read: positionals.slice(0, -1), written: positionals.slice(-1) };
