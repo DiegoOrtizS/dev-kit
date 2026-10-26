@@ -37,7 +37,7 @@ jobs:
       - run: node bin/dev-kit.mjs scan-secrets --all
 
   commits:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,8 +51,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: node bin/dev-kit.mjs check-commit --range "$BASE..$HEAD"
-      - if: github.actor != 'dependabot[bot]'
-        env:
+      - env:
           TITLE: ${{ github.event.pull_request.title }}
         run: node bin/dev-kit.mjs check-commit --message "$TITLE"
 

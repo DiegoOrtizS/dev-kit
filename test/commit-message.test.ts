@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TYPES, headerOf, headerProblems, isExempt, isDependabot } from "../src/guardrails/commit-message.mjs";
+import { TYPES, headerOf, headerProblems, isExempt } from "../src/guardrails/commit-message.mjs";
 
 describe("headerProblems", () => {
   it.each([
@@ -126,13 +126,5 @@ describe("headerOf", () => {
     expect(headerOf("feat: thing\r\n\r\nbody")).toBe("feat: thing");
     expect(headerOf("")).toBe("");
     expect(headerOf("# only comments\n", { stripComments: true })).toBe("");
-  });
-});
-
-describe("isDependabot", () => {
-  it("matches the bot by name or email, case-insensitively", () => {
-    expect(isDependabot("dependabot[bot]", "49699333+dependabot[bot]@users.noreply.github.com")).toBe(true);
-    expect(isDependabot("Someone", "Dependabot@example.com")).toBe(true);
-    expect(isDependabot("Diego", "diego@example.com")).toBe(false);
   });
 });

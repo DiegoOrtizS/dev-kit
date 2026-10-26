@@ -156,7 +156,7 @@ The three modes:
 
 - `dev-kit check-commit <file>`: the `commit-msg` hook. Lines starting with `#` are dropped first, because git has not stripped its comment template yet when the hook runs.
 - `dev-kit check-commit --message "<text>"`: one header, for example a pull request title. Only the first non-blank line is checked.
-- `dev-kit check-commit --range <base>..<head>`: every commit in the range except merges. Commits whose author name or email contains `dependabot` are skipped, because Dependabot writes its own subjects and the check would only block its PRs.
+- `dev-kit check-commit --range <base>..<head>`: every commit in the range except merges. Nothing is skipped by author: an author name is whatever the committer typed, so the exemption for Dependabot lives in CI, keyed on the PR's author login.
 
 The hook, in `lefthook.yml` (call the bin through Node where `pnpm` may not be on the path):
 
@@ -167,11 +167,11 @@ commit-msg:
       run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit {1}
 ```
 
-The CI job, on `pull_request` only, checks the PR's commits and its title. The SHAs and the title reach the script through `env`, never through `${{ }}` inside `run:`: a PR title is text anyone can write, and expanding it into the shell would run it. The title step is skipped for `dependabot[bot]`, whose titles can exceed 100 characters; its commits are already skipped by author. The range needs the full history, so the checkout uses `fetch-depth: 0`. The kit is a git dependency, so the repository's usual install step (`pnpm/action-setup` plus `pnpm install --frozen-lockfile`, or whatever the Python repo uses to install its Node dev tools) goes before the two `check-commit` steps.
+The CI job, on `pull_request` only, checks the PR's commits and its title. The SHAs and the title reach the script through `env`, never through `${{ }}` inside `run:`: a PR title is text anyone can write, and expanding it into the shell would run it. The whole job is skipped when the PR was opened by `dependabot[bot]`, decided from `github.event.pull_request.user.login` in the job's `if:` (an expression GitHub evaluates, never the shell), because Dependabot writes its own subjects and titles, some over 100 characters, and the check would only block its PRs. The range needs the full history, so the checkout uses `fetch-depth: 0`. The kit is a git dependency, so the repository's usual install step (`pnpm/action-setup` plus `pnpm install --frozen-lockfile`, or whatever the Python repo uses to install its Node dev tools) goes before the two `check-commit` steps.
 
 ```yaml
 commits:
-  if: github.event_name == 'pull_request'
+  if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
   runs-on: ubuntu-latest
   timeout-minutes: 10
   steps:
@@ -185,8 +185,7 @@ commits:
         BASE: ${{ github.event.pull_request.base.sha }}
         HEAD: ${{ github.event.pull_request.head.sha }}
       run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit --range "$BASE..$HEAD"
-    - if: github.actor != 'dependabot[bot]'
-      env:
+    - env:
         TITLE: ${{ github.event.pull_request.title }}
       run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit --message "$TITLE"
 ```

@@ -8,15 +8,10 @@ const HEADER = /^([a-z]+)(?:\(([^()]*)\))?(!?):(.*)$/;
 const SCOPE = /^[a-z0-9./-]+$/;
 const CAPS_WORD = /^[A-Z]{2,}(?![A-Za-z])/;
 const EXEMPT = /^(Merge branch |Merge pull request #|Merge remote-tracking branch |Revert "|fixup! |squash! )/;
-const DEPENDABOT = /dependabot/i;
 const USAGE = 'usage: dev-kit check-commit <file> | --message "<text>" | --range <base>..<head>';
 
 export function isExempt(header) {
   return EXEMPT.test(header);
-}
-
-export function isDependabot(name, email) {
-  return DEPENDABOT.test(name) || DEPENDABOT.test(email);
 }
 
 export function headerOf(message, { stripComments = false } = {}) {
@@ -48,15 +43,14 @@ function messageProblems(header, { exempt }) {
 }
 
 function rangeProblems(range, cwd) {
-  const log = execFileSync("git", ["log", "--no-merges", "--format=%x1e%H%x1f%an%x1f%ae%x1f%B", range], {
+  const log = execFileSync("git", ["log", "--no-merges", "--format=%x1e%H%x1f%B", range], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
   const problems = [];
   for (const record of log.split("\x1e").filter((part) => part.trim() !== "")) {
-    const [sha, name, email, body] = record.split("\x1f");
-    if (isDependabot(name, email)) continue;
+    const [sha, body] = record.split("\x1f");
     const header = headerOf(body);
     if (isExempt(header)) continue;
     const found = headerProblems(header);

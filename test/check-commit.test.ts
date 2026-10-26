@@ -135,17 +135,23 @@ describe("check-commit --range", () => {
     expect(result.stderr).toContain("Bad one");
   });
 
-  it("skips merge commits and dependabot authors", () => {
+  it("skips merge commits", () => {
     const base = git("rev-parse", "HEAD");
     git("checkout", "-q", "-b", "feat/x");
     commit("feat: on the branch");
     git("checkout", "-q", "main");
-    commit(
+    commit("fix: on main");
+    git("merge", "-q", "--no-ff", "-m", "Not conventional merge", "feat/x");
+    expect(commitProblems(["--range", `${base}..HEAD`], repo)).toEqual([]);
+  });
+
+  it("does not skip a commit because its author claims to be dependabot", () => {
+    const base = git("rev-parse", "HEAD");
+    const spoofed = commit(
       "Bump the npm-minor-patch group across 1 directory with 7 updates (#11)",
       "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
     );
-    git("merge", "-q", "--no-ff", "-m", "Not conventional merge", "feat/x");
-    expect(commitProblems(["--range", `${base}..HEAD`], repo)).toEqual([]);
+    expect(commitProblems(["--range", `${base}..HEAD`], repo).join("\n")).toContain(spoofed.slice(0, 7));
   });
 
   it("exempts git's revert and fixup commits but not look-alikes", () => {
