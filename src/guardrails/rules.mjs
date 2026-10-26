@@ -41,6 +41,14 @@ export const SECRET_RULES = [
   { rule: "github-fine-grained-pat", pattern: /github_pat_[A-Za-z0-9_]{30,}/ },
   { rule: "github-token", pattern: /gh[pousr]_[A-Za-z0-9]{36,}/ },
   { rule: "aws-access-key", pattern: /(AKIA|ASIA)[0-9A-Z]{16}/ },
+  {
+    rule: "aws-secret-access-key-variable",
+    pattern: /AWS_SECRET_ACCESS_KEY\s*[=:]\s*["']?[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+])/,
+  },
+  { rule: "live-payment-secret-key", pattern: /(?<![\w-])[sr]k_live_[A-Za-z0-9]{16,}/ },
+  { rule: "npm-token", pattern: /(?<![\w-])npm_[A-Za-z0-9]{36}(?![A-Za-z0-9])/ },
+  { rule: "anthropic-api-key", pattern: /sk-ant-[a-z]+\d{2}-[A-Za-z0-9_-]{40,}/ },
+  { rule: "openai-project-key", pattern: /sk-proj-[A-Za-z0-9_-]{40,}/ },
   { rule: "private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY( BLOCK)?-----/ },
   {
     rule: "postgres-url-with-password",
@@ -49,7 +57,7 @@ export const SECRET_RULES = [
   { rule: "cloudflare-api-token-variable", pattern: /CLOUDFLARE_API_TOKEN\s*[=:]\s*["']?(?!$)[A-Za-z0-9_-]{20,}/ },
   { rule: "cloudflare-token", pattern: /cf[ua]t_[A-Za-z0-9]{40,}/ },
   { rule: "google-client-secret", pattern: /GOCSPX-[A-Za-z0-9_-]{20,}/ },
-  { rule: "discord-webhook", pattern: /discord(?:app)?\.com\/api\/webhooks\/\d{17,20}\/[\w-]{60,}/ },
+  { rule: "discord-webhook", pattern: /discord(?:app)?\.com\/api\/(?:v\d+\/)?webhooks\/\d{17,20}\/[\w-]{60,}/ },
   {
     rule: "card-number",
     matches: (content) => [...content.matchAll(CARD_LIKE)].some(([match]) => isRealCardNumber(match)),

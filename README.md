@@ -120,7 +120,9 @@ The guard always blocks these, whatever the config says: force pushes, `--all`/`
 
 Edits to the agent's own limits (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/guard.json`, `tools/claude-hooks/`) through Write/Edit or `cp`/`mv` return an `ask` decision, so Claude Code prompts the user even when the call would otherwise be allowed.
 
-Secret patterns aim for few false positives. A card number must pass Luhn and must not be a public test card. A Discord webhook needs a snowflake ID and a full-length token. Binary files are skipped.
+Secret patterns aim for few false positives. A card number must pass Luhn and must not be a public test card. A Discord webhook needs a snowflake ID and a full-length token, with or without an API version in the path. An AWS secret access key is caught only next to its variable name with a 40-character value, so templated `${{ secrets.* }}` references pass. Payment keys match `sk_live_` and `rk_live_` (Stripe and Culqi shapes), never `pk_live_` or test keys. npm, Anthropic and OpenAI project tokens match their published prefixes. Binary files are skipped.
+
+CI runs gitleaks over the full history on every pull request and push to `main`, next to `scan-secrets --all`, because this repository is public.
 
 ## CLI
 
