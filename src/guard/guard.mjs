@@ -17,6 +17,7 @@ import {
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
+import { checkInlineCode } from "./interpreters.mjs";
 import { checkPipes } from "./pipes.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkDeleteAfterChdir, checkRemove } from "./remove.mjs";
@@ -71,6 +72,7 @@ function checkWords(words, context, dialect = BASH) {
     checkSst(rest),
     checkFileAccess(name, args, context),
     REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context) : ALLOW,
+    checkInlineCode(name, args),
   ]);
 }
 

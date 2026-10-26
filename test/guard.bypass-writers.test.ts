@@ -43,3 +43,36 @@ describe("in-place editors and other writers", () => {
     expect(bash("sed -i 's/a/b/' .env").block).toBe(true);
   });
 });
+
+describe("inline interpreter code", () => {
+  it.each([
+    "node -e \"require('child_process').execSync('git push -f')\"",
+    "node -e 'const { spawn } = require(\"child_process\")'",
+    'node -e \'require("fs").rmSync("x", { recursive: true })\'',
+    'node -p \'require("child_process").execSync("id")\'',
+    "node --eval \"require('child_process')\"",
+    "node --eval=\"require('child_process')\"",
+    'python -c \'import subprocess; subprocess.run(["git", "push", "-f"])\'',
+    "python3 -c 'import shutil; shutil.rmtree(\"x\")'",
+    "python -c 'import os; os.remove(\"x\")'",
+    "perl -e 'system(\"git push -f\")'",
+    "perl -E 'system(\"git push -f\")'",
+    "ruby -e 'system(\"git push -f\")'",
+    "php -r 'system(\"git push -f\");'",
+    "pnpm exec node -e \"require('child_process').execSync('x')\"",
+  ])("asks before %s", (command) => {
+    expect(bash(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each([
+    'node -e "console.log(1)"',
+    "python -c 'print(1)'",
+    "node script.js",
+    "perl -e 'print 1'",
+    'node -e \'require("fs").readFileSync("x")\'',
+    "python -m pytest",
+    "node --version",
+  ])("allows %s", (command) => {
+    expect(bash(command)).toEqual({ block: false });
+  });
+});

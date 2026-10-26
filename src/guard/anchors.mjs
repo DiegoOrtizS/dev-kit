@@ -1,6 +1,7 @@
 import { commandName, dialectOfShell } from "./dialects.mjs";
 import { isFileCommand } from "./env-files.mjs";
 import { setterAssignments } from "./env-setters.mjs";
+import { INTERPRETERS } from "./interpreters.mjs";
 import { REMOVE_COMMANDS } from "./remove.mjs";
 
 export const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly", "local"]);
@@ -12,7 +13,13 @@ const STARTER_VALUED_FLAGS = /^-(verb|workingdirectory|wd|windowstyle|credential
 
 function isAnchor(word) {
   const name = commandName(word);
-  return ANCHORS.has(name) || /^sst@/.test(name) || REMOVE_COMMANDS.has(name) || dialectOfShell(name) !== null;
+  return (
+    ANCHORS.has(name) ||
+    /^sst@/.test(name) ||
+    REMOVE_COMMANDS.has(name) ||
+    INTERPRETERS.has(name) ||
+    dialectOfShell(name) !== null
+  );
 }
 
 function abbreviates(argument, full) {
