@@ -3,16 +3,20 @@ import { execFileSync } from "node:child_process";
 import { loadConfig } from "../src/config.mjs";
 import { checkBranch } from "../src/guardrails/check-branch.mjs";
 import { checkQuiet } from "../src/guardrails/check-quiet.mjs";
+import { checkCommit } from "../src/guardrails/commit-message.mjs";
 import { scanSecrets } from "../src/guardrails/scan-secrets.mjs";
 import { syncCheck } from "../src/guardrails/sync-check.mjs";
 import { worktreesClean } from "../src/guardrails/worktrees-clean.mjs";
+import { releaseTag } from "../src/release/release-tag.mjs";
 
 const COMMANDS = {
   "scan-secrets": scanSecrets,
   "check-branch": checkBranch,
+  "check-commit": checkCommit,
   "check-quiet": checkQuiet,
   "worktrees-clean": worktreesClean,
   "sync-check": syncCheck,
+  "release-tag": releaseTag,
 };
 
 const [name, ...args] = process.argv.slice(2);
