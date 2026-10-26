@@ -35,7 +35,7 @@ function producedPaths({ words, raw }) {
   if (command === undefined) return null;
   const name = commandName(command);
   if (PRINTERS.has(name)) return args.filter((argument) => !argument.startsWith("-"));
-  if (name === "find") return findDeleteTargets(["-delete", ...args]);
+  if (name === "find") return findDeleteTargets([...args, "-delete"]);
   if (PATH_LISTERS.has(name)) return listedPaths(args);
   return null;
 }

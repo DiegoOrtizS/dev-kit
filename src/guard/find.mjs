@@ -15,8 +15,9 @@ const NARROWING_PREDICATES = new Set([
   "-lname",
   "-ilname",
 ]);
-const MATCHES_EVERYTHING = /^[*?.]*$/;
 const EXEC_PREDICATES = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
+const BOOLEAN_OPERATORS = new Set(["-o", "-or", "!", "-not", "(", ")"]);
+const LITERAL_CHARACTER = /[A-Za-z0-9_-]/;
 
 export function findStartPaths(args) {
   let index = 0;
@@ -39,10 +40,17 @@ function deletesMatches(args) {
   });
 }
 
+function hasLiteral(pattern) {
+  return LITERAL_CHARACTER.test(pattern.replace(/\[[^\]]*\]/g, ""));
+}
+
 function isNarrowed(args) {
+  if (args.some((argument) => BOOLEAN_OPERATORS.has(argument))) return false;
+  const action = args.findIndex((argument) => argument === "-delete" || EXEC_PREDICATES.has(argument));
   return args.some(
     (argument, index) =>
-      argument === "-empty" || (NARROWING_PREDICATES.has(argument) && !MATCHES_EVERYTHING.test(args[index + 1] ?? "")),
+      index < action &&
+      (argument === "-empty" || (NARROWING_PREDICATES.has(argument) && hasLiteral(args[index + 1] ?? ""))),
   );
 }
 

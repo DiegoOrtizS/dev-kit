@@ -61,6 +61,16 @@ describe("find that deletes", () => {
     "find ~/.ssh -delete",
     `find ${repoRoot} -delete`,
     "find . src -delete",
+    "find . ! -name '*.keep' -delete",
+    "find . -not -name '*.keep' -delete",
+    "find . -name '*.log' -o -name '*' -delete",
+    "find . -name '*.log' -or -delete",
+    "find . \\( -name a -o -name b \\) -delete",
+    "find . -path './*' -delete",
+    "find . -regex '.*' -delete",
+    "find . -name '[a-z]*' -delete",
+    "find . -delete -name '*.log'",
+    "find . -exec rm -rf {} + -name '*.log'",
   ])("blocks %s", (command) => {
     expect(bash(command).block).toBe(true);
   });
@@ -74,6 +84,9 @@ describe("find that deletes", () => {
     "find dist -type f -exec rm {} +",
     "find . -name '*.ts'",
     "find . -name '*.ts' -exec prettier --check {} \\;",
+    "find . -name '*.log' -a -type f -delete",
+    "find . -path './node_modules/*' -prune -o -name '*.log' -print",
+    "find . -type f -name '*.tmp' -mtime +7 -delete",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
   });
