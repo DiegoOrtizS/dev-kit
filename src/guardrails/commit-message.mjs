@@ -6,6 +6,7 @@ export const MAX_HEADER = 100;
 
 const HEADER = /^([a-z]+)(?:\(([^()]*)\))?(!?):(.*)$/;
 const SCOPE = /^[a-z0-9./-]+$/;
+const CAPS_WORD = /^[A-Z]{2,}(?![A-Za-z])/;
 const EXEMPT = /^(Merge branch |Merge pull request #|Merge remote-tracking branch |Revert "|fixup! |squash! )/;
 const DEPENDABOT = /dependabot/i;
 const USAGE = 'usage: dev-kit check-commit <file> | --message "<text>" | --range <base>..<head>';
@@ -32,8 +33,11 @@ export function headerProblems(header) {
   if (!TYPES.includes(type)) problems.push(`unknown type "${type}", use one of ${TYPES.join(", ")}`);
   if (scope !== undefined && !SCOPE.test(scope)) problems.push(`scope "${scope}" must be lowercase [a-z0-9./-]+`);
   const subject = rest.startsWith(" ") ? rest.slice(1) : "";
-  if (subject.trim() === "") problems.push("subject must follow the colon and one space, and must not be empty");
-  else if (subject.endsWith(".")) problems.push("subject must not end with a period");
+  if (subject.trim() === "") return [...problems, "subject must follow the colon and one space, and must not be empty"];
+  if (/^[A-Z]/.test(subject) && !CAPS_WORD.test(subject)) {
+    problems.push("subject must start in lowercase, unless its first word is an all-caps name such as CI or JSON");
+  }
+  if (subject.endsWith(".")) problems.push("subject must not end with a period");
   return problems;
 }
 

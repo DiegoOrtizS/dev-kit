@@ -17,6 +17,12 @@ describe("headerProblems", () => {
     "style: ok",
     "revert: feat: add the thing",
     "fix: decide worktrees-clean merges by content, not commit subject (#14)",
+    "fix: CI runs twice",
+    "feat: JSON output",
+    "feat: HTTP/2 support",
+    "docs: CLAUDE.md budget",
+    "feat: SEO head tags, store JSON-LD, sitemap and robots (#45)",
+    "fix: CI",
     `feat: ${"x".repeat(94)}`,
   ])("accepts %j", (header) => {
     expect(headerProblems(header)).toEqual([]);
@@ -33,6 +39,14 @@ describe("headerProblems", () => {
     ["feat: ", /subject/],
     ["feat:", /subject/],
     ["feat: ends with a period.", /period/],
+    ["feat: Add the thing", /lowercase/],
+    ["fix: Plan 13 minors batch (#59)", /lowercase/],
+    ["feat: M9 hardening and deploy readiness (#39)", /lowercase/],
+    ["feat: Libro de Reclamaciones, legal pages (plan 5)", /lowercase/],
+    ["chore(deps): Bump the npm-minor-patch group", /lowercase/],
+    ["fix: PRs are checked", /lowercase/],
+    ["feat: OAuth login", /lowercase/],
+    ["feat: A thing", /lowercase/],
     ["feat : space before colon", /type/],
     ["feat(scope) : space before colon", /type/],
     ["feat!(scope): bang before scope", /type/],
@@ -44,8 +58,8 @@ describe("headerProblems", () => {
   });
 
   it("reports every problem at once", () => {
-    const problems = headerProblems(`wat(Scope): ${"x".repeat(95)}.`);
-    expect(problems).toHaveLength(4);
+    const problems = headerProblems(`wat(Scope): ${"X".repeat(95)}y.`);
+    expect(problems).toHaveLength(5);
   });
 
   it("names the eleven types", () => {

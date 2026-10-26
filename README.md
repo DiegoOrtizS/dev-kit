@@ -147,6 +147,7 @@ From a git hook, call the bin through Node (`node node_modules/dev-kit/bin/dev-k
 - the header is `<type>(<scope>)?!?: <subject>`, with type one of `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `build`, `perf`, `style`, `revert`;
 - the scope is optional and lowercase, `[a-z0-9./-]+`, so `deps-dev`, `guard/windows` and `v1.2` work and `Guard` does not;
 - the header is at most 100 characters, the subject is not empty and does not end with a period;
+- the subject starts in lowercase, unless its first word is an all-caps name of two or more letters followed by a non-letter or the end (`CI runs twice`, `JSON output`, `CLAUDE.md budget`). This is what config-conventional's `subject-case` rejected (sentence, start, pascal and upper case), so `Add the thing`, `Plan 13 minors` and `OAuth login` fail. Across the three repos' `main` histories only five of 379 commits would have failed, two of them Dependabot titles;
 - in the hook and in `--range`, a header in one of git's own forms is exempt: `Merge branch `, `Merge pull request #`, `Merge remote-tracking branch `, `Revert "`, `fixup! ` and `squash! `. Look-alikes such as `Merge the things` or `Revert deploy` are not, and `--message` exempts nothing, because a PR title becomes the squash subject on `main`.
 
 Every problem in a header is reported at once, with the header itself, so the fix is one edit.
