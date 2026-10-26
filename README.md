@@ -166,7 +166,7 @@ commit-msg:
       run: node node_modules/dev-kit/bin/dev-kit.mjs check-commit {1}
 ```
 
-The CI job, on `pull_request` only, checks the PR's commits and its title. The SHAs and the title reach the script through `env`, never through `${{ }}` inside `run:`: a PR title is text anyone can write, and expanding it into the shell would run it. The title step is skipped for `dependabot[bot]`, whose titles can exceed 100 characters; its commits are already skipped by author. The range needs the full history, so the checkout uses `fetch-depth: 0`.
+The CI job, on `pull_request` only, checks the PR's commits and its title. The SHAs and the title reach the script through `env`, never through `${{ }}` inside `run:`: a PR title is text anyone can write, and expanding it into the shell would run it. The title step is skipped for `dependabot[bot]`, whose titles can exceed 100 characters; its commits are already skipped by author. The range needs the full history, so the checkout uses `fetch-depth: 0`. The kit is a git dependency, so the repository's usual install step (`pnpm/action-setup` plus `pnpm install --frozen-lockfile`, or whatever the Python repo uses to install its Node dev tools) goes before the two `check-commit` steps.
 
 ```yaml
 commits:
@@ -180,7 +180,6 @@ commits:
     - uses: actions/setup-node@<sha> # v7
       with:
         node-version: 22
-    - run: pnpm install --frozen-lockfile
     - env:
         BASE: ${{ github.event.pull_request.base.sha }}
         HEAD: ${{ github.event.pull_request.head.sha }}
