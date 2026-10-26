@@ -1,7 +1,8 @@
+import { commandName } from "./dialects.mjs";
 import { ALLOW, deny } from "./verdict.mjs";
 
 export function checkSst(words) {
-  const sstIndex = words.slice(0, 4).indexOf("sst");
+  const sstIndex = words.slice(0, 4).findIndex((word) => /^sst(@|$)/.test(commandName(word)));
   if (sstIndex === -1) return ALLOW;
   const args = words.slice(sstIndex + 1);
   const destructive = args.some((argument) => argument === "remove" || argument === "deploy");

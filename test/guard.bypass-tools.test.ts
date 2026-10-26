@@ -3,6 +3,7 @@ import { evaluateToolCall } from "../src/guard/guard.mjs";
 
 const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } });
 const monitor = (command: string) => evaluateToolCall({ tool_name: "Monitor", tool_input: { command } });
+const powershell = (command: string) => evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } });
 const token = ["ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0"].join("");
 
 describe("Monitor tool", () => {
@@ -58,9 +59,32 @@ describe("unknown wrappers", () => {
     "pnpm exec git.exe push -f",
     "yarn remove-item -recurse -force ~",
     "pnpm exec sst deploy --stage production",
+    "npx sst@latest deploy --stage production",
+    "npx sst@3.1.0 remove --stage=production",
+    "pnpm exec GIT push -f",
+    "npx Git.exe push --force",
   ])("blocks %s", (command) => {
     expect(bash(command).block).toBe(true);
   });
+
+  it.each([
+    "Start-Process git -ArgumentList 'push -f'",
+    "Start-Process -FilePath git -ArgumentList 'push','-f'",
+    "saps git 'push -f'",
+    "Start-Process git -Args 'push','--force' -Wait",
+    "Start-Process pwsh -ArgumentList '-c','git push -f'",
+    "Start-Process -Wait -FilePath cmd -ArgumentList '/c','rd /s /q C:\\'",
+    "Start-Process -Verb RunAs git -ArgumentList 'push -f'",
+  ])("blocks %s in powershell", (command) => {
+    expect(powershell(command).block).toBe(true);
+  });
+
+  it.each(["Start-Process notepad", "Start-Process git -ArgumentList 'status'", "Start-Process code ."])(
+    "allows %s in powershell",
+    (command) => {
+      expect(powershell(command).block).toBe(false);
+    },
+  );
 
   it.each([
     "pnpm exec dev-kit sync-check",
@@ -77,6 +101,7 @@ describe("unknown wrappers", () => {
     "git commit -m 'rm -rf cleanup'",
     "gh pr create --title 'git push -f'",
     "pnpm check",
+    "npx sst@latest dev",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
   });

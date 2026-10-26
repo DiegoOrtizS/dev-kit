@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
 import { findSecrets } from "../guardrails/rules.mjs";
-import { ENV_EXPORTERS, reanchored } from "./anchors.mjs";
+import { ENV_EXPORTERS, launchedWords, reanchored } from "./anchors.mjs";
 import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
 import {
   GIT_HOOKS_ASK,
@@ -23,7 +23,7 @@ import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
 import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
-import { isDynamic, stdinScripts, unreadableScript } from "./stdin.mjs";
+import { isDynamic, isDynamicCommand, stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
@@ -40,14 +40,6 @@ function checkFindExec(args, context, dialect) {
   return firstBlock(verdicts);
 }
 
-const POWERSHELL_OPERATOR = /^(-[a-z]+|[-+*/%=]|==|\.\.)$/i;
-
-function isDynamicCommand(command, args, dialect) {
-  if (!/[$`]/.test(command)) return false;
-  if (dialect.bashSyntax) return true;
-  return dialect === POWERSHELL && args.length > 0 && !POWERSHELL_OPERATOR.test(args[0]);
-}
-
 function checkWords(words, context, dialect = BASH) {
   const { assignments, rest } = stripPrefixes(words);
   const assignmentVerdict = checkAssignments(assignments);
@@ -55,6 +47,8 @@ function checkWords(words, context, dialect = BASH) {
   const [command, ...args] = rest;
   if (isDynamicCommand(command, args, dialect)) return unreadableScript(command);
   const name = commandName(command);
+  const launched = launchedWords(name, args);
+  if (launched !== null) return checkWords(launched, context, dialect);
   const wrapped = reanchored(rest, dialect);
   if (wrapped !== null) return checkWords(wrapped, context, dialect);
   if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));

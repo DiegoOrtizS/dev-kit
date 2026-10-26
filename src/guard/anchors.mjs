@@ -7,10 +7,34 @@ export const ENV_EXPORTERS = new Set(["export", "declare", "typeset", "readonly"
 const ANCHORS = new Set(["git", "gh", "sst", "lefthook", "find", "eval", "iex", "invoke-expression"]);
 const PRINTERS = new Set(["echo", "printf", "write-output", "write-host", "man", "which", "where", "whereis"]);
 
+const PROCESS_STARTERS = new Set(["start-process", "saps"]);
+const STARTER_VALUED_FLAGS = /^-(verb|workingdirectory|wd|windowstyle|credential|redirect\w*|loaduserprofile)$/i;
+
 function isAnchor(word) {
   const name = commandName(word);
-  if (/^[A-Z_][A-Z0-9_]*$/.test(word)) return false;
-  return ANCHORS.has(name) || REMOVE_COMMANDS.has(name) || dialectOfShell(name) !== null;
+  return ANCHORS.has(name) || /^sst@/.test(name) || REMOVE_COMMANDS.has(name) || dialectOfShell(name) !== null;
+}
+
+function abbreviates(argument, full) {
+  const name = /^-(\w+)$/.exec(argument)?.[1].toLowerCase();
+  return name !== undefined && full.startsWith(name);
+}
+
+export function launchedWords(name, args) {
+  if (!PROCESS_STARTERS.has(name)) return null;
+  let file = null;
+  const list = [];
+  const positionals = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (abbreviates(argument, "filepath")) file = args[(index += 1)] ?? null;
+    else if (abbreviates(argument, "argumentlist") || /^-args$/i.test(argument)) list.push(args[(index += 1)] ?? "");
+    else if (STARTER_VALUED_FLAGS.test(argument)) index += 1;
+    else if (!argument.startsWith("-")) positionals.push(argument);
+  }
+  file ??= positionals.shift() ?? null;
+  if (file === null) return null;
+  return [file, ...[...list, ...positionals].flatMap((item) => item.split(/[\s,]+/).filter(Boolean))];
 }
 
 function isKnownCommand(command, name, dialect) {

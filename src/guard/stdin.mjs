@@ -16,6 +16,14 @@ export function isDynamic(text) {
   return text.trim() === "" || /[$`]/.test(text);
 }
 
+const POWERSHELL_OPERATOR = /^(-[a-z]+|[-+*/%=]|==|\.\.)$/i;
+
+export function isDynamicCommand(command, args, dialect) {
+  if (!/[$`]/.test(command)) return false;
+  if (dialect.bashSyntax) return true;
+  return dialect === POWERSHELL && args.length > 0 && !POWERSHELL_OPERATOR.test(args[0]);
+}
+
 function consumerDialect(words) {
   const [command, ...args] = stripPrefixes(words).rest;
   if (command === undefined) return null;
