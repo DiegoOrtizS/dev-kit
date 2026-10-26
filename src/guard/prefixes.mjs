@@ -50,6 +50,8 @@ export function stripPrefixes(words) {
     } else if (/^\$env:\w+$/i.test(word) && rest[1] === "=") {
       assignments.push(`${word.slice(5)}=${rest[2] ?? ""}`);
       rest = rest.slice(3);
+    } else if (/^\$[\w{}:.]+$/.test(word) && /^[-+*/%]?=$/.test(rest[1] ?? "")) {
+      rest = rest.slice(2);
     } else if (assignment) {
       assignments.push(assignment);
       rest = rest.slice(1);

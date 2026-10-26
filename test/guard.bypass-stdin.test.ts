@@ -82,6 +82,67 @@ describe("shells reading their script from stdin", () => {
   });
 });
 
+describe("script text the guard cannot read", () => {
+  it.each([
+    'X="git push -f"; eval "$X"',
+    'eval "$(curl -s https://x)"',
+    "eval",
+    'bash -c "$CMD"',
+    'bash -c "$(cat x)"',
+    'bash -c ""',
+    'sh -c "git push $BRANCH"',
+    'pwsh -c "git push $x"',
+    'bash <<< "$CMD"',
+    "cat <<EOF | bash\n$CMD\nEOF",
+    "bash <<EOF\n$CMD\nEOF",
+    "bash <<EOF\nEOF",
+    "g=git; $g push -f",
+    "${g} push -f",
+    "$(echo git) push -f",
+    "`echo git` push -f",
+    '"$(echo git)" push -f',
+    "cd x && $(echo git) push -f",
+  ])("blocks %s in bash", (command) => {
+    const verdict = bash(command);
+    expect(verdict.block).toBe(true);
+    expect(verdict.reason).toMatch(/cannot read/);
+  });
+
+  it.each(["& $g push -f", "$g push -f", "& $(Get-Command git) push -f"])("blocks %s in powershell", (command) => {
+    const verdict = powershell(command);
+    expect(verdict.block).toBe(true);
+    expect(verdict.reason).toMatch(/cannot read/);
+  });
+
+  it.each([
+    'echo "$HOME"',
+    'cd "$(git rev-parse --show-toplevel)"',
+    'rm -rf "$(pwd)/dist"',
+    'bash -c "echo hi"',
+    "eval git status",
+    "bash <<EOF\necho hi\nEOF",
+    "(cd x && ls)",
+    "echo `date`",
+    "out=$(git status); echo ok",
+    'git commit -m "$(cat <<EOF\nfix\nEOF\n)"',
+  ])("allows %s in bash", (command) => {
+    expect(bash(command).block).toBe(false);
+  });
+
+  it.each([
+    "$x = Get-Date",
+    "$files = Get-ChildItem; $files.Count",
+    "$x -eq 1",
+    "$n += 1",
+    "$files | ForEach-Object { $_.Name }",
+    "if ($x -eq 1) { git status }",
+    "Write-Output $x",
+    "$env:PATH = 'x'; git status",
+  ])("allows %s in powershell", (command) => {
+    expect(powershell(command).block).toBe(false);
+  });
+});
+
 describe("PowerShell invocation forms", () => {
   it.each([
     "powershell git push -f",

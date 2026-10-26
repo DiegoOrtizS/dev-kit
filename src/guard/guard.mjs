@@ -23,7 +23,7 @@ import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
 import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
-import { stdinScripts, unreadableScript } from "./stdin.mjs";
+import { isDynamic, stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
@@ -40,11 +40,20 @@ function checkFindExec(args, context, dialect) {
   return firstBlock(verdicts);
 }
 
-function checkWords(words, context, dialect) {
+const POWERSHELL_OPERATOR = /^(-[a-z]+|[-+*/%=]|==|\.\.)$/i;
+
+function isDynamicCommand(command, args, dialect) {
+  if (!/[$`]/.test(command)) return false;
+  if (dialect.bashSyntax) return true;
+  return dialect === POWERSHELL && args.length > 0 && !POWERSHELL_OPERATOR.test(args[0]);
+}
+
+function checkWords(words, context, dialect = BASH) {
   const { assignments, rest } = stripPrefixes(words);
   const assignmentVerdict = checkAssignments(assignments);
   if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
   const [command, ...args] = rest;
+  if (isDynamicCommand(command, args, dialect)) return unreadableScript(command);
   const name = commandName(command);
   const wrapped = reanchored(rest, dialect);
   if (wrapped !== null) return checkWords(wrapped, context, dialect);
@@ -52,8 +61,12 @@ function checkWords(words, context, dialect) {
   const setters = setterAssignments(name, args, dialect);
   if (setters !== null && setters.length > 0) return checkAssignments(setters);
   const nested = scriptFromShell(name, args);
-  if (nested !== null) return checkScript(nested.script, context, nested.dialect);
-  if (name === "eval") return checkScript(args.join(" "), context, dialect);
+  if (nested !== null) {
+    return isDynamic(nested.script) ? unreadableScript(name) : checkScript(nested.script, context, nested.dialect);
+  }
+  if (name === "eval") {
+    return isDynamic(args.join(" ")) ? unreadableScript(name) : checkScript(args.join(" "), context, dialect);
+  }
   if (name === "lefthook" && args.includes("uninstall")) {
     return deny("Blocked: lefthook uninstall removes the git hooks.");
   }

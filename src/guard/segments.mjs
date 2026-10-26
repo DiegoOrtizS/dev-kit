@@ -34,6 +34,8 @@ function scan(command, dialect, found, start, closer) {
   let heredocs = [];
   let segmentStart = start;
   let pipedFrom = null;
+  let substitutedCommandDepth = null;
+  let inBacktick = false;
 
   const finishWord = () => {
     if (heredocDelimiterNext) heredocs.push({ delimiter: word, owner: words });
@@ -88,8 +90,10 @@ function scan(command, dialect, found, start, closer) {
         if (next !== "\n") word += next;
       } else if (dialect.substitutionInQuotes && char === "$" && next === "(") {
         i = scan(command, dialect, found, i + 2, ")");
+        word += "$(";
       } else if (dialect.bashSyntax && char === "`") {
         i = scan(command, dialect, found, i + 1, "`");
+        word += "`";
       } else word += char;
     } else if (dialect.quotes.includes(char)) {
       quote = char;
@@ -110,6 +114,7 @@ function scan(command, dialect, found, start, closer) {
       inWord = true;
       i += 1;
     } else if (char === "$" && next === "(") {
+      if (words.length === 0 && !inWord) substitutedCommandDepth = depth;
       endSegment(i);
       depth += 1;
       i += 1;
@@ -134,7 +139,17 @@ function scan(command, dialect, found, start, closer) {
     } else if (dialect.breaks.has(char)) {
       if (char === "(") depth += 1;
       if (char === ")") depth = Math.max(0, depth - 1);
+      const opensBacktick = char === "`" && !inBacktick;
+      if (char === "`") inBacktick = !inBacktick;
+      if (opensBacktick && dialect.bashSyntax && words.length === 0 && !inWord) substitutedCommandDepth = -1;
       endSegment(i, char === "|" && next !== "|" && command[i - 1] !== "|");
+      const closesSubstitutedCommand =
+        (char === ")" && depth === substitutedCommandDepth) ||
+        (char === "`" && !inBacktick && substitutedCommandDepth === -1);
+      if (closesSubstitutedCommand) {
+        words.push(char === ")" ? "$(" : "`");
+        substitutedCommandDepth = null;
+      }
       if (char === "\n" && heredocs.length > 0) {
         i = skipHeredocBodies(command, i, heredocs, found);
         segmentStart = i + 1;

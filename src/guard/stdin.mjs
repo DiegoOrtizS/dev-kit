@@ -12,6 +12,10 @@ export function unreadableScript(name) {
   );
 }
 
+export function isDynamic(text) {
+  return text.trim() === "" || /[$`]/.test(text);
+}
+
 function consumerDialect(words) {
   const [command, ...args] = stripPrefixes(words).rest;
   if (command === undefined) return null;
@@ -58,7 +62,9 @@ export function stdinScripts(found, dialect) {
   }
   for (const { owner, body } of found.heredocs) {
     const consumer = consumerDialect(owner);
-    if (consumer !== null) scripts.push({ script: body, dialect: consumer });
+    if (consumer === null) continue;
+    if (isDynamic(body)) opaque.push(commandName(stripPrefixes(owner).rest[0]));
+    else scripts.push({ script: body, dialect: consumer });
   }
   for (const { from, to } of found.pipes) {
     const consumer = consumerDialect(to);
