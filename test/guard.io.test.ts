@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -8,17 +8,21 @@ import { evaluateToolCall } from "../src/guard/guard.mjs";
 const settingsPatch = "--- a/.claude/settings.json\n+++ b/.claude/settings.json\n@@ -1 +1 @@\n-{}\n+{}\n";
 const ordinaryPatch = "--- a/src/x.ts\n+++ b/src/x.ts\n@@ -1 +1 @@\n-a\n+b\n";
 
+const gitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
 let root = "";
 let repo = "";
 let broken = "";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "ignore" });
+const setAlias = (directory: string, name: string, value: string) =>
+  git(directory, `--git-dir=${path.join(directory, ".git")}`, "config", `alias.${name}`, value);
 const run = (command: string, cwd: string) =>
   evaluateToolCall({ tool_name: "Bash", tool_input: { command }, cwd }, { repoRoot: cwd });
 const gitBashPath = (windowsPath: string) =>
   windowsPath.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, drive: string) => `/${drive.toLowerCase()}`);
 
 beforeAll(() => {
+  for (const [key] of gitEnv) delete process.env[key];
   root = mkdtempSync(path.join(tmpdir(), "dev-kit-guard-io-"));
   writeFileSync(path.join(root, "global.gitconfig"), "");
   vi.stubEnv("GIT_CONFIG_GLOBAL", path.join(root, "global.gitconfig"));
@@ -27,10 +31,11 @@ beforeAll(() => {
   broken = path.join(root, "broken");
   for (const directory of [repo, broken]) {
     mkdirSync(directory);
-    git(directory, "init", "-q");
+    git(directory, "init", "-q", directory);
+    expect(existsSync(path.join(directory, ".git", "config"))).toBe(true);
   }
-  git(repo, "config", "alias.nuke", "reset --hard");
-  git(repo, "config", "alias.st", "status");
+  setAlias(repo, "nuke", "reset --hard");
+  setAlias(repo, "st", "status");
   appendFileSync(path.join(broken, ".git", "config"), "\n[alias\n");
   writeFileSync(path.join(repo, "evil.patch"), settingsPatch);
   writeFileSync(path.join(repo, "fix.diff"), ordinaryPatch);
@@ -39,6 +44,7 @@ beforeAll(() => {
 
 afterAll(() => {
   vi.unstubAllEnvs();
+  for (const [key, value] of gitEnv) process.env[key] = value;
   rmSync(root, { recursive: true, force: true });
 });
 
