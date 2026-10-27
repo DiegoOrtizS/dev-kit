@@ -2,18 +2,9 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
-import { findSecrets } from "../guardrails/rules.mjs";
 import { ENV_EXPORTERS, launchedWords, reanchored } from "./anchors.mjs";
 import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
-import {
-  GIT_HOOKS_ASK,
-  OWN_LIMITS_ASK,
-  checkFileAccess,
-  checkWrittenPaths,
-  matchesBlockedPath,
-  touchesGitHooks,
-  touchesOwnLimits,
-} from "./env-files.mjs";
+import { checkFileAccess, checkWrittenPaths } from "./env-files.mjs";
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
@@ -26,9 +17,9 @@ import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
 import { isDynamic, isDynamicCommand, stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
+import { checkFileTool } from "./write-tools.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
-const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 function checkFindExec(args, context, dialect) {
   const verdicts = [];
@@ -90,44 +81,6 @@ function checkScript(script, context, dialect = BASH) {
   ]);
 }
 
-function collectWrittenText(toolName, toolInput) {
-  if (toolName === "Write") return [toolInput.content];
-  if (toolName === "Edit") return [toolInput.new_string];
-  if (toolName === "NotebookEdit") return [toolInput.new_source];
-  if (toolName === "MultiEdit" && Array.isArray(toolInput.edits)) {
-    return toolInput.edits.map((edit) => edit?.new_string);
-  }
-  return [];
-}
-
-function checkWrittenText(toolName, toolInput) {
-  for (const text of collectWrittenText(toolName, toolInput)) {
-    if (typeof text !== "string") continue;
-    const [finding] = findSecrets(text);
-    if (finding) {
-      return deny(
-        `Blocked: the content looks like a secret (${finding.rule}, line ${finding.line}). Keep secrets in the platform's secret store and environment variables, never in the repository.`,
-      );
-    }
-  }
-  return ALLOW;
-}
-
-function checkFilePath(toolName, input, context) {
-  const path = input.file_path ?? input.notebook_path;
-  if (typeof path !== "string") return ALLOW;
-  const { blockedPaths } = context.config;
-  if (WRITE_TOOLS.has(toolName) && matchesBlockedPath(path, blockedPaths.write, context)) {
-    return deny("Blocked: this path is off limits for writing in this repository (.claude/guard.json).");
-  }
-  if (toolName === "Read" && matchesBlockedPath(path, blockedPaths.read, context)) {
-    return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
-  }
-  if (WRITE_TOOLS.has(toolName) && touchesOwnLimits(path, context)) return OWN_LIMITS_ASK;
-  if (WRITE_TOOLS.has(toolName) && touchesGitHooks(path)) return GIT_HOOKS_ASK;
-  return ALLOW;
-}
-
 export function evaluateToolCall({ tool_name: toolName, tool_input: toolInput, cwd }, options = {}) {
   const input = toolInput && typeof toolInput === "object" ? toolInput : {};
   const workingDirectory = cwd ?? process.cwd();
@@ -141,7 +94,7 @@ export function evaluateToolCall({ tool_name: toolName, tool_input: toolInput, c
       ? checkScript(input.command, context, toolName === "PowerShell" ? POWERSHELL : BASH)
       : ALLOW;
   }
-  return firstBlock([checkFilePath(toolName, input, context), checkWrittenText(toolName, input)]);
+  return checkFileTool(toolName, input, context);
 }
 
 function failClosed(reason) {
