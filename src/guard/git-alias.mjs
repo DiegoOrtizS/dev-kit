@@ -1,6 +1,27 @@
+import { ENV_EXPORTERS } from "./anchors.mjs";
+import { commandName } from "./dialects.mjs";
+import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { gitInvocation } from "./git-args.mjs";
+import { asAssignment, stripPrefixes } from "./prefixes.mjs";
+import { DIRECTORY_CHANGERS } from "./remove.mjs";
 import { splitSegments } from "./segments.mjs";
 import { ask } from "./verdict.mjs";
+
+const GIT_REPO_ENV = /^(?:GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR)=/i;
+
+export function aliasContextUncertain(found, script, dialect) {
+  for (const words of found.segments) {
+    const { assignments, rest } = stripPrefixes(words);
+    if (assignments.some((assignment) => GIT_REPO_ENV.test(assignment))) return true;
+    const [command, ...args] = rest;
+    if (command === undefined) continue;
+    const name = commandName(command);
+    if (DIRECTORY_CHANGERS.has(name)) return true;
+    if (ENV_EXPORTERS.has(name) && args.map(asAssignment).some((a) => a !== null && GIT_REPO_ENV.test(a))) return true;
+    if ((setterAssignments(name, args, dialect) ?? []).some((a) => GIT_REPO_ENV.test(a))) return true;
+  }
+  return environmentCalls(script, dialect).some((assignment) => GIT_REPO_ENV.test(assignment));
+}
 
 const NEVER_ALIASED = new Set(
   `add am annotate apply archive bisect blame branch bugreport bundle cat-file check-attr check-ignore check-mailmap
@@ -33,9 +54,23 @@ function lookupArguments(prefix) {
   return kept;
 }
 
+function shellQuote(word) {
+  return `'${word.replace(/'/g, "'\\''")}'`;
+}
+
+function lookupAlias(name, gitArgs, context) {
+  const key = `${name.toLowerCase()}\u0000${gitArgs.join("\u0000")}`;
+  if (context.aliasCache?.has(key)) return context.aliasCache.get(key);
+  if (context.deadline !== undefined && Date.now() >= context.deadline) return undefined;
+  const value = context.io.gitAlias(name, { cwd: context.cwd, gitArgs, deadline: context.deadline });
+  context.aliasCache?.set(key, value);
+  return value;
+}
+
 export function expandGitAlias(args, context) {
   const { subcommand, rest } = gitInvocation(args);
   if (subcommand === undefined || NEVER_ALIASED.has(subcommand)) return null;
+  if (context.aliasUncertain) return { verdict: UNRESOLVED_ALIAS };
   const prefix = args.slice(0, args.length - rest.length - 1);
   const gitArgs = lookupArguments(prefix);
   const seen = new Set();
@@ -46,13 +81,14 @@ export function expandGitAlias(args, context) {
     seen.add(name.toLowerCase());
     let expansion;
     try {
-      expansion = context.io.gitAlias(name, { cwd: context.cwd, gitArgs });
+      expansion = lookupAlias(name, gitArgs, context);
     } catch {
       return { verdict: UNRESOLVED_ALIAS };
     }
+    if (expansion === undefined) return { verdict: UNRESOLVED_ALIAS };
     if (expansion === null) break;
     if (expansion.startsWith("!")) {
-      const script = [expansion.slice(1), ...words].join(" ");
+      const script = [expansion.slice(1), ...words.map(shellQuote)].join(" ");
       return { script, dynamic: /[$`]/.test(expansion) };
     }
     const [first, ...more] = splitSegments(expansion).segments.flat();

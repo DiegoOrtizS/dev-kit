@@ -21,11 +21,12 @@ export function readTextFile(path) {
   }
 }
 
-export function gitAlias(name, { cwd, gitArgs }) {
+export function gitAlias(name, { cwd, gitArgs, deadline }) {
+  const remaining = deadline === undefined ? GIT_TIMEOUT_MS : Math.max(1, deadline - Date.now());
   const result = spawnSync("git", [...gitArgs, "config", "--get", `alias.${name}`], {
     cwd,
     encoding: "utf8",
-    timeout: GIT_TIMEOUT_MS,
+    timeout: Math.min(GIT_TIMEOUT_MS, remaining),
     windowsHide: true,
   });
   if (result.error) throw result.error;

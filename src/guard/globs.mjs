@@ -1,10 +1,22 @@
 const BRACE_GROUP = /\{([^{}]*)\}/;
 const SEQUENCE = /^[^.]*\.\.[^.]*$/;
 const MAX_ALTERNATIVES = 64;
-const BRACKET = /\[!?\]?[^\]]*\]/g;
+const BRACKET = /\[!?\]?(?:\[:[a-z]+:\]|[^\]])*\]/gi;
+const BRACKET_ONE = /^\[!?\]?(?:\[:[a-z]+:\]|[^\]])*\]/i;
+const POSIX_CLASS = /\[:[a-z]+:\]/i;
+const EXTGLOB = /[@+!?*]\([^()]*\)/;
 
 export function hasGlob(text) {
-  return /[*?[]/.test(text);
+  return /[*?[]/.test(text) || EXTGLOB.test(text);
+}
+
+export function normalizeGlobs(path) {
+  let current = path;
+  for (let previous = ""; current !== previous;) {
+    previous = current;
+    current = current.replace(new RegExp(EXTGLOB, "g"), "*");
+  }
+  return current;
 }
 
 function expandOnce(word) {
@@ -32,7 +44,7 @@ export function expandBraces(word) {
 }
 
 export function isWholeDirectorySegment(segment) {
-  return /^[*?.]+$/.test(segment.replace(BRACKET, "?"));
+  return /^[*?.]+$/.test(normalizeGlobs(segment).replace(BRACKET, "?"));
 }
 
 function bracketClass(bracket) {
@@ -46,9 +58,9 @@ export function globRegExp(path, { crossSlash = false } = {}) {
   let source = "";
   for (let index = 0; index < path.length; index += 1) {
     const char = path[index];
-    const bracket = char === "[" ? /^\[!?\]?[^\]]*\]/.exec(path.slice(index)) : null;
+    const bracket = char === "[" ? BRACKET_ONE.exec(path.slice(index)) : null;
     if (bracket !== null) {
-      source += bracketClass(bracket[0]);
+      source += POSIX_CLASS.test(bracket[0]) ? one : bracketClass(bracket[0]);
       index += bracket[0].length - 1;
     } else if (char === "*" && path[index + 1] === "*") {
       source += ".*";

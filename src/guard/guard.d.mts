@@ -18,12 +18,16 @@ export interface GuardContext {
   repoRoot: string;
   config: DevKitConfig;
   io: GuardIo;
+  aliasCache?: Map<string, string | null>;
+  deadline?: number;
+  aliasUncertain?: boolean;
 }
 
 export interface EvaluateOptions {
   repoRoot?: string;
   config?: DevKitConfig;
   io?: Partial<GuardIo>;
+  budgetMs?: number;
 }
 
 export function evaluateToolCall(input: ToolCall, options?: EvaluateOptions): Verdict;

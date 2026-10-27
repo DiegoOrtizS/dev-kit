@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { evaluateToolCall } from "../src/guard/guard.mjs";
 
-const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } });
-const powershell = (command: string) => evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } });
+const bash = (command: string) =>
+  evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io: { gitAlias: () => null } });
+const powershell = (command: string) =>
+  evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } }, { io: { gitAlias: () => null } });
 
 describe("moving, unlinking and linking protected files", () => {
   it.each([
@@ -93,5 +95,63 @@ describe("inline code that writes protected files", () => {
     "[IO.Path]::Combine('a', 'b')",
   ])("allows %s in powershell", (command) => {
     expect(powershell(command)).toEqual({ block: false });
+  });
+});
+
+describe("copy and move destinations given as options", () => {
+  it.each([
+    "cp -t .claude settings.json",
+    "cp --target-directory=.claude settings.json",
+    "cp -t tools/claude-hooks a.mjs b.mjs",
+    "mv -t .claude settings.json",
+    "install -t tools/claude-hooks guard.mjs",
+    "rsync -a settings.json --target-directory=.claude",
+  ])("asks before %s", (command) => {
+    expect(bash(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each([
+    "Copy-Item -Path x.json -Destination .claude\\settings.json",
+    "Copy-Item -Destination .claude\\settings.json -Path x.json",
+    "Copy-Item -Destination:.claude\\settings.json -Path x.json",
+    "Move-Item -Destination .git\\hooks\\pre-commit -Path x",
+    "Copy-Item -Destination tools\\claude-hooks\\guard.mjs x.mjs",
+  ])("asks before %s in powershell", (command) => {
+    expect(powershell(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each(["cp -t dist settings.json", "cp --target-directory=dist a.json", "install -t build x"])(
+    "allows %s",
+    (command) => {
+      expect(bash(command)).toEqual({ block: false });
+    },
+  );
+
+  it.each(["Copy-Item -Path x.json -Destination dist\\x.json", "Copy-Item -Destination build -Path y"])(
+    "allows %s in powershell",
+    (command) => {
+      expect(powershell(command)).toEqual({ block: false });
+    },
+  );
+});
+
+describe("inline interpreter writes that build the protected path", () => {
+  it.each([
+    "python -c \"from pathlib import Path; (Path('.claude')/'settings.json').write_text('{}')\"",
+    "node -e \"require('fs').writeFileSync(require('path').join('.claude','settings.json'),'{}')\"",
+    "node -pe \"require('fs').writeFileSync('.claude/settings.json','{}')\"",
+    "node -ep \"require('fs').writeFileSync('.claude/settings.json','{}')\"",
+    "python3 - <<'EOF'\nopen('.claude/settings.json','w').write('{}')\nEOF",
+    "python3 - <<'PY'\nfrom pathlib import Path\n(Path('.claude')/'guard.json').write_text('{}')\nPY",
+  ])("asks before %s", (command) => {
+    expect(bash(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each([
+    "python3 - <<'EOF'\nprint('hello')\nEOF",
+    'node -pe "1 + 1"',
+    "python -c \"from pathlib import Path; print(Path('.claude'))\"",
+  ])("allows %s", (command) => {
+    expect(bash(command)).toEqual({ block: false });
   });
 });

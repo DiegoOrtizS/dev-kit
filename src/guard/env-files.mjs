@@ -1,4 +1,6 @@
 import { basename, posix } from "node:path";
+import { BASH } from "./dialects.mjs";
+import { moverTargets } from "./movers.mjs";
 import { expandHome } from "./remove.mjs";
 import { ALLOW, ask, deny, firstBlock } from "./verdict.mjs";
 
@@ -140,24 +142,12 @@ function editsInPlace(name, args) {
   return flag !== undefined && args.some((argument) => flag.test(argument));
 }
 
-function moverArguments(name, positionals) {
-  const sources = positionals.slice(0, -1);
-  const destination = positionals.at(-1);
-  const replaced =
-    destination === undefined
-      ? []
-      : sources.map((source) => posix.join(cleanArgument(destination), basename(cleanArgument(source))));
-  return {
-    read: sources,
-    written: FILE_LINKERS.has(name) ? positionals : positionals.slice(-1),
-    removed: [...replaced, ...(FILE_RENAMERS.has(name) ? sources : [])],
-  };
-}
-
-function inspectedArguments(name, args) {
+function inspectedArguments(name, args, dialect) {
   const positionals = args.filter((argument) => !argument.startsWith("-"));
   const read = FILE_READERS.has(name) ? args : [];
-  if (FILE_MOVERS.has(name)) return moverArguments(name, positionals);
+  if (FILE_MOVERS.has(name)) {
+    return moverTargets(name, args, dialect, { rename: FILE_RENAMERS.has(name), link: FILE_LINKERS.has(name) });
+  }
   if (FILE_DELETERS.has(name)) return { read, written: [], removed: positionals };
   if (FILE_WRITERS.has(name) || editsInPlace(name, args)) return { read, written: positionals, removed: [] };
   if (name === "dd") {
@@ -181,8 +171,8 @@ export function checkRemovedPaths(removed, context) {
   return removed.some((path) => coversOwnLimits(path, context)) ? OWN_LIMITS_ASK : ALLOW;
 }
 
-export function checkFileAccess(name, args, context) {
-  const { read, written, removed } = inspectedArguments(name, args);
+export function checkFileAccess(name, args, context, dialect = BASH) {
+  const { read, written, removed } = inspectedArguments(name, args, dialect);
   if (read.some(isProtectedEnvFile)) return deny("Blocked: reading .env files exposes secrets.");
   if (read.some((argument) => matchesBlockedPath(argument, context.config.blockedPaths.read, context))) {
     return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");

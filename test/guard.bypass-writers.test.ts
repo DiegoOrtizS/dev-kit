@@ -21,7 +21,7 @@ const patches: Record<string, string> = {
   "state.patch": unified("state/STOP"),
   "dynamic.patch": "--- a/$TARGET\n+++ b/$TARGET\n",
 };
-const io = { readTextFile: (path: string) => patches[basename(path)] ?? null };
+const io = { readTextFile: (path: string) => patches[basename(path)] ?? null, gitAlias: () => null };
 const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io });
 const withState = (command: string) =>
   evaluateToolCall(
@@ -193,6 +193,32 @@ describe("git checkout and restore of protected files", () => {
 
   it("denies a checkout into a write-blocked folder", () => {
     expect(withState("git checkout main -- state/STOP").block).toBe(true);
+  });
+});
+
+describe("pathspecs that are all excludes rewrite the whole tree", () => {
+  it.each([
+    "git checkout HEAD~3 -- ':!README.md'",
+    "git checkout HEAD~3 -- ':!a' ':!b'",
+    "git restore --source=HEAD~3 ':(exclude)README.md'",
+    "git restore -s HEAD~3 -- ':!a'",
+  ])("blocks %s", (command) => {
+    const verdict = bash(command);
+    expect(verdict.block).toBe(true);
+    expect(verdict.reason).toMatch(/whole tree|discards work/);
+  });
+
+  it.each(["git rm -r ':!x'", "git rm ':!a' ':!b'"])("asks before %s", (command) => {
+    expect(bash(command)).toMatchObject({ block: false, ask: true });
+  });
+
+  it.each([
+    "git checkout HEAD~3 -- ':!README.md' src/x.ts",
+    "git checkout main -- src/x.ts",
+    "git rm ':!x' src/old.ts",
+    "git log -- ':!vendor'",
+  ])("allows %s", (command) => {
+    expect(bash(command)).toEqual({ block: false });
   });
 });
 

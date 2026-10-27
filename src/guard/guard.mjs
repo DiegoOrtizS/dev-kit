@@ -8,9 +8,9 @@ import { checkFileAccess, checkWrittenPaths } from "./env-files.mjs";
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
-import { SHELL_ALIAS_WITH_ARGUMENTS, expandGitAlias } from "./git-alias.mjs";
+import { SHELL_ALIAS_WITH_ARGUMENTS, aliasContextUncertain, expandGitAlias } from "./git-alias.mjs";
 import { environmentCommands, gitConfigCommands } from "./config-commands.mjs";
-import { checkDotNetFileCalls, checkInlineCode } from "./interpreters.mjs";
+import { INTERPRETERS, checkDotNetFileCalls, checkInlineCode, checkInterpreterInput } from "./interpreters.mjs";
 import { HIDDEN_COMMAND, aliasDefinitions, hidesCommand } from "./shell-aliases.mjs";
 import { guardIo } from "./io.mjs";
 import { checkPatchCommand } from "./patches.mjs";
@@ -25,6 +25,7 @@ import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 import { checkFileTool } from "./write-tools.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
+const DEFAULT_BUDGET_MS = 8000;
 
 function checkFindExec(args, context, dialect) {
   const verdicts = [];
@@ -102,9 +103,10 @@ function checkCommand(rest, context, dialect, input) {
     name === "gh" ? checkGh(args) : ALLOW,
     name === "find" ? checkFindExec(args, context, dialect) : ALLOW,
     checkSst(rest),
-    checkFileAccess(name, args, context),
-    REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context) : ALLOW,
+    checkFileAccess(name, args, context, dialect),
+    REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context, dialect) : ALLOW,
     checkInlineCode(name, args),
+    INTERPRETERS.has(name) ? checkInterpreterInput(name, args, input, context.io.readTextFile) : ALLOW,
   ]);
 }
 
@@ -112,15 +114,16 @@ function checkScript(script, context, dialect = BASH) {
   const found = splitSegments(script, dialect);
   const stdin = stdinScripts(found, dialect);
   const inputs = segmentInputs(found, dialect);
+  const local = aliasContextUncertain(found, script, dialect) ? { ...context, aliasUncertain: true } : context;
   return firstBlock([
     checkEnvironment(environmentCalls(script, dialect), context),
     checkDotNetFileCalls(script, dialect),
-    ...found.segments.map((words) => checkWords(words, context, dialect, inputs.get(words))),
+    ...found.segments.map((words) => checkWords(words, local, dialect, inputs.get(words))),
     ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
     ...stdin.opaque.map(unreadableScript),
-    checkPipes(found.pipes, context),
+    checkPipes(found.pipes, context, dialect),
     checkWrittenPaths(found.written, context),
-    checkDeleteAfterChdir(found.segments),
+    checkDeleteAfterChdir(found.segments, dialect),
   ]);
 }
 
@@ -132,6 +135,8 @@ export function evaluateToolCall({ tool_name: toolName, tool_input: toolInput, c
     repoRoot: options.repoRoot ?? workingDirectory,
     config: options.config ?? normalizeConfig(),
     io: guardIo(options.io),
+    aliasCache: new Map(),
+    deadline: Date.now() + (options.budgetMs ?? DEFAULT_BUDGET_MS),
   };
   if (SCRIPT_TOOLS.has(toolName)) {
     return typeof input.command === "string"

@@ -138,6 +138,15 @@ function scan(command, dialect, found, start, closer) {
       return i;
     } else if (dialect.bashSyntax && !inWord && (char === "<" || char === ">") && next === "(") {
       i = processSubstitution(char, i);
+    } else if (dialect.bashSyntax && char === "(" && inWord && /[@+!?*]$/.test(word)) {
+      let groupDepth = 1;
+      word += char;
+      while (groupDepth > 0 && i + 1 < command.length) {
+        i += 1;
+        if (command[i] === "(") groupDepth += 1;
+        else if (command[i] === ")") groupDepth -= 1;
+        word += command[i];
+      }
     } else if (dialect.comments && !inWord && char === "#") {
       const lineEnd = command.indexOf("\n", i);
       i = (lineEnd === -1 ? command.length : lineEnd) - 1;

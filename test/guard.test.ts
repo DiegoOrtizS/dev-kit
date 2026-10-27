@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { evaluateToolCall } from "../src/guard/guard.mjs";
 
-const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } });
+const bash = (command: string) =>
+  evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io: { gitAlias: () => null } });
 
 describe("evaluateToolCall", () => {
   it.each([
