@@ -8,6 +8,7 @@ import { checkFileAccess, checkWrittenPaths } from "./env-files.mjs";
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
+import { SHELL_ALIAS_WITH_ARGUMENTS, expandGitAlias } from "./git-alias.mjs";
 import { checkInlineCode } from "./interpreters.mjs";
 import { guardIo } from "./io.mjs";
 import { checkPatchCommand } from "./patches.mjs";
@@ -54,6 +55,13 @@ function checkWords(words, context, dialect = BASH, input = undefined) {
   }
   if (name === "eval") {
     return isDynamic(args.join(" ")) ? unreadableScript(name) : checkScript(args.join(" "), context, dialect);
+  }
+  const alias = name === "git" ? expandGitAlias(args, context) : null;
+  if (alias !== null && "verdict" in alias) return alias.verdict;
+  if (alias !== null && "args" in alias) return checkWords(["git", ...alias.args], context, dialect, input);
+  if (alias !== null) {
+    const verdict = checkScript(alias.script, { ...context, cwd: context.repoRoot }, BASH);
+    return firstBlock([verdict, alias.dynamic ? SHELL_ALIAS_WITH_ARGUMENTS : ALLOW]);
   }
   if (name === "lefthook" && args.includes("uninstall")) {
     return deny("Blocked: lefthook uninstall removes the git hooks.");

@@ -6,6 +6,33 @@ const powershell = (command: string) => evaluateToolCall({ tool_name: "PowerShel
 const write = (tool: string, file_path: string) =>
   evaluateToolCall({ tool_name: tool, tool_input: { file_path, content: "x", new_string: "x" } });
 
+const configuredAliases: Record<string, string> = {
+  nuke: "reset --hard",
+  wipe: "!rm -rf ~",
+  pf: "push --force",
+  shove: "pf origin feat/x",
+  publish: "!git push origin HEAD:main",
+  sneak: "-c core.hooksPath=/dev/null commit",
+  fpush: '!f() { git push -f "$@"; }; f',
+  branchoff: '!f() { git checkout -b "$1"; }; f',
+  co: "checkout",
+  st: "status",
+  lg: "log --oneline",
+  ls: "!git ls-files | head -n 5",
+  loop1: "loop2",
+  loop2: "loop1",
+  clean: "!rm -rf ~",
+};
+const lookups: string[] = [];
+const aliasIo = {
+  gitAlias: (name: string) => {
+    lookups.push(name);
+    return configuredAliases[name.toLowerCase()] ?? null;
+  },
+};
+const withAliases = (command: string) =>
+  evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io: aliasIo });
+
 describe("git hooks and config files", () => {
   it.each([
     "C:/Users/x/repos/kit/.git/hooks/pre-commit",
@@ -200,5 +227,55 @@ describe("git aliases and includes", () => {
     "git p origin feat/x",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
+  });
+});
+
+describe("git aliases already in the config", () => {
+  it.each([
+    "git nuke",
+    "git NUKE",
+    "git wipe",
+    "git pf",
+    "git shove",
+    "git publish",
+    "git sneak -m x",
+    "git fpush origin feat/x",
+    "git -C . nuke",
+    "pnpm exec git nuke",
+    "bash -c 'git wipe'",
+  ])("blocks %s", (command) => {
+    expect(withAliases(command).block).toBe(true);
+  });
+
+  it("asks before a shell alias that passes its arguments on", () => {
+    const verdict = withAliases("git branchoff feat/x");
+    expect(verdict).toMatchObject({ block: false, ask: true });
+    expect(verdict.reason).toMatch(/alias/);
+  });
+
+  it.each(["git st", "git lg -n 5", "git co feat/x", "git ls", "git loop1", "git lfs pull", "git clean -n"])(
+    "allows %s",
+    (command) => {
+      expect(withAliases(command)).toEqual({ block: false });
+    },
+  );
+
+  it("never looks up a builtin subcommand", () => {
+    lookups.length = 0;
+    for (const command of ["git status", "git push origin feat/x", "git commit -m x", "git clean -n", "git -C . log"]) {
+      withAliases(command);
+    }
+    expect(lookups).toEqual([]);
+  });
+
+  it("asks when git cannot say whether the subcommand is an alias", () => {
+    const failing = {
+      gitAlias: () => {
+        throw new Error("spawn git ENOENT");
+      },
+    };
+    const verdict = evaluateToolCall({ tool_name: "Bash", tool_input: { command: "git nuke" } }, { io: failing });
+    expect(verdict).toMatchObject({ block: false, ask: true });
+    expect(verdict.reason).toMatch(/alias/);
   });
 });
