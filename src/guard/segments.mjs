@@ -74,6 +74,11 @@ function scan(command, dialect, found, start, closer) {
     else found.pipes.push({ from: { words, raw: command.slice(segmentStart, begin) }, to: fed.words });
     return end;
   };
+  const substitution = (begin, skip, closing) => {
+    const end = scan(command, dialect, found, begin + skip, closing);
+    word += command.slice(begin, end + 1);
+    return end;
+  };
   const startsRedirect = (char, next) =>
     char === "<" || char === ">" || (dialect.bashSyntax && char === "&" && next === ">");
 
@@ -89,11 +94,9 @@ function scan(command, dialect, found, start, closer) {
         i += 1;
         if (next !== "\n") word += next;
       } else if (dialect.substitutionInQuotes && char === "$" && next === "(") {
-        i = scan(command, dialect, found, i + 2, ")");
-        word += "$(";
+        i = substitution(i, 2, ")");
       } else if (dialect.bashSyntax && char === "`") {
-        i = scan(command, dialect, found, i + 1, "`");
-        word += "`";
+        i = substitution(i, 1, "`");
       } else word += char;
     } else if (dialect.quotes.includes(char)) {
       quote = char;
@@ -113,6 +116,12 @@ function scan(command, dialect, found, start, closer) {
       quote = '"';
       inWord = true;
       i += 1;
+    } else if (char === "$" && next === "(" && (words.length > 0 || inWord)) {
+      i = substitution(i, 2, ")");
+      inWord = true;
+    } else if (dialect.bashSyntax && char === "`" && closer !== "`" && !inBacktick && (words.length > 0 || inWord)) {
+      i = substitution(i, 1, "`");
+      inWord = true;
     } else if (char === "$" && next === "(") {
       if (words.length === 0 && !inWord) substitutedCommandDepth = depth;
       endSegment(i);

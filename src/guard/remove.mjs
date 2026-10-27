@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { posix } from "node:path";
 import { commandName } from "./dialects.mjs";
+import { expandBraces, globRegExp, hasGlob, isWholeDirectorySegment } from "./globs.mjs";
 import { isLongOption, isShortFlagCluster } from "./options.mjs";
 import { stripPrefixes } from "./prefixes.mjs";
 import { ALLOW, ask, deny } from "./verdict.mjs";
@@ -12,9 +13,12 @@ const CHDIR_DELETE_ASK = ask(
 );
 
 const HOME = homedir();
+const HOME_PARENT = posix.dirname(HOME.replace(/\\/g, "/"));
 
-const WHOLE_DIRECTORY_SEGMENTS = /^[*?.]+$/;
-const SENSITIVE_HOME_DIRECTORIES = [".ssh", ".aws", ".gnupg", ".config/gh", ".claude"];
+const SENSITIVE_HOME_DIRECTORIES = [".ssh", ".aws", ".gnupg", ".config", ".config/gh", ".claude"];
+const USER_HOME = /^~([A-Za-z_][\w.-]*)(?=[\\/]|$)/;
+const WORKING_DIRECTORY = /^(\$PWD|\$\{PWD\}|~\+|\$\(\s*(pwd|get-location|gl)\s*\)|`\s*pwd\s*`)(?=[\\/]|$)/i;
+const UNRESOLVED_TARGET = /[$`]|%[^%\s]+%|^~-(?=[\\/]|$)/;
 export const REMOVE_COMMANDS = new Set(["rm", "remove-item", "ri", "rd", "rmdir", "del", "erase"]);
 const CMD_REMOVE_COMMANDS = new Set(["rd", "rmdir", "del", "erase"]);
 const CMD_SWITCH = /^\/[a-z?](:.*)?$/i;
@@ -55,23 +59,37 @@ export function expandHome(target) {
   );
 }
 
+function resolveTarget(target, context) {
+  const user = USER_HOME.exec(target);
+  if (user !== null) return `${HOME_PARENT}/${user[1]}${target.slice(user[0].length)}`;
+  return expandHome(target).replace(WORKING_DIRECTORY, context.cwd);
+}
+
 function globFreeBase(target) {
-  const expanded = expandHome(target);
-  const segments = expanded.split(/[\\/]/).filter(Boolean);
-  if (segments.length > 0 && segments.every((segment) => WHOLE_DIRECTORY_SEGMENTS.test(segment))) return null;
-  while (segments.length > 0 && WHOLE_DIRECTORY_SEGMENTS.test(segments.at(-1)) && !/^\.\.?$/.test(segments.at(-1))) {
+  const segments = target.split(/[\\/]/).filter(Boolean);
+  if (segments.length > 0 && segments.every(isWholeDirectorySegment)) return null;
+  while (segments.length > 0 && isWholeDirectorySegment(segments.at(-1)) && !/^\.\.?$/.test(segments.at(-1))) {
     segments.pop();
   }
-  return `${/^[\\/]/.test(expanded) ? "/" : ""}${segments.join("/")}` || "/";
+  return `${/^[\\/]/.test(target) ? "/" : ""}${segments.join("/")}` || "/";
+}
+
+function absolutePath(path, context) {
+  const normalized = normalizePath(path);
+  return posix.normalize(normalized.startsWith("/") ? normalized : posix.join(normalizePath(context.cwd), normalized));
 }
 
 function targetsProtectedPath(target, context) {
-  const base = globFreeBase(target);
-  if (base === null) return true;
-  const normalized = normalizePath(base);
-  const absolute = normalized.startsWith("/") ? normalized : posix.join(normalizePath(context.cwd), normalized);
-  const resolved = posix.normalize(absolute);
-  return /^\/[a-z]$/.test(resolved) || protectedPaths(context.repoRoot).has(resolved);
+  const protectedSet = protectedPaths(context.repoRoot);
+  return expandBraces(target).some((alternative) => {
+    const base = globFreeBase(alternative);
+    if (base === null) return true;
+    const resolved = absolutePath(base, context);
+    if (/^\/[a-z]$/.test(resolved) || protectedSet.has(resolved)) return true;
+    if (!hasGlob(alternative)) return false;
+    const pattern = globRegExp(absolutePath(alternative, context));
+    return [...protectedSet].some((path) => pattern.test(path));
+  });
 }
 
 function expandCmdSwitches(args) {
@@ -114,7 +132,13 @@ export function checkDeleteAfterChdir(segments) {
 export function checkRemove(name, rawArgs, context) {
   const { recursive, targets } = removeTargets(name, rawArgs);
   if (!recursive) return ALLOW;
-  return targets.some((target) => targetsProtectedPath(target, context))
+  const resolved = targets.map((target) => resolveTarget(target, context));
+  if (resolved.some((target) => UNRESOLVED_TARGET.test(target))) {
+    return deny(
+      `Blocked: ${name} would delete recursively a path built from a variable or a substitution, and the guard cannot read it. Name the path instead.`,
+    );
+  }
+  return resolved.some((target) => targetsProtectedPath(target, context))
     ? deny(
         `Blocked: recursive delete of the repository root, the home folder, a drive or one of their ancestors (${name}).`,
       )
