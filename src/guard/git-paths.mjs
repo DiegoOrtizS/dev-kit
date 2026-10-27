@@ -13,6 +13,8 @@ import { ALLOW, ask, deny, firstBlock } from "./verdict.mjs";
 const VALUED = {
   checkout: new Set(["-b", "-B", "--orphan", "--conflict", "--pathspec-from-file"]),
   restore: new Set(["-s", "--source", "--conflict", "--pathspec-from-file"]),
+  rm: new Set(["--pathspec-from-file"]),
+  mv: new Set(),
 };
 const WHOLE_TREE_REWRITERS = new Set(["checkout", "restore"]);
 const WHOLE_TREE = deny(
@@ -55,6 +57,7 @@ export function checkGitPaths(subcommand, rest, context) {
   const { values, flags, positionals } = parseArguments(rest, valued);
   if (values["--pathspec-from-file"] !== undefined) return UNREADABLE_PATHSPEC;
   if (subcommand === "restore" && isStagedOnly(flags)) return ALLOW;
+  if (subcommand === "rm" && flags.some((flag) => isLongOption(flag, "cached", 2))) return ALLOW;
   const paths = positionals.filter((spec) => !EXCLUDE_MAGIC.test(spec)).map((spec) => pathspecPath(spec, context));
   if (WHOLE_TREE_REWRITERS.has(subcommand) && paths.some((path) => relativeToRepo(path, context) === "")) {
     return WHOLE_TREE;

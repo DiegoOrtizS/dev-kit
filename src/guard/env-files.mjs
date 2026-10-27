@@ -1,6 +1,6 @@
 import { basename, posix } from "node:path";
 import { expandHome } from "./remove.mjs";
-import { ALLOW, ask, deny } from "./verdict.mjs";
+import { ALLOW, ask, deny, firstBlock } from "./verdict.mjs";
 
 const FILE_READERS = new Set([
   "cat",
@@ -27,7 +27,10 @@ const FILE_READERS = new Set([
   "select-string",
   "sls",
 ]);
-const FILE_MOVERS = new Set(["cp", "mv", "ln", "install", "copy-item", "move-item", "cpi", "mi"]);
+const FILE_MOVERS = new Set(["cp", "mv", "ln", "install", "rsync", "copy-item", "move-item", "cpi", "mi"]);
+const FILE_RENAMERS = new Set(["mv", "move-item", "mi"]);
+const FILE_LINKERS = new Set(["ln"]);
+const FILE_DELETERS = new Set(["rm", "unlink", "shred", "remove-item", "ri", "del", "erase", "rd", "rmdir"]);
 const IN_PLACE_FLAGS = {
   sed: /^-[A-Za-z]*i|^--in-place/,
   perl: /^-[A-Za-z]*i/,
@@ -129,7 +132,7 @@ export const GIT_HOOKS_ASK = ask(
 );
 
 export function isFileCommand(name) {
-  return FILE_READERS.has(name) || FILE_MOVERS.has(name) || FILE_WRITERS.has(name);
+  return FILE_READERS.has(name) || FILE_MOVERS.has(name) || FILE_WRITERS.has(name) || FILE_DELETERS.has(name);
 }
 
 function editsInPlace(name, args) {
@@ -137,13 +140,30 @@ function editsInPlace(name, args) {
   return flag !== undefined && args.some((argument) => flag.test(argument));
 }
 
+function moverArguments(name, positionals) {
+  const sources = positionals.slice(0, -1);
+  const destination = positionals.at(-1);
+  const replaced =
+    destination === undefined
+      ? []
+      : sources.map((source) => posix.join(cleanArgument(destination), basename(cleanArgument(source))));
+  return {
+    read: sources,
+    written: FILE_LINKERS.has(name) ? positionals : positionals.slice(-1),
+    removed: [...replaced, ...(FILE_RENAMERS.has(name) ? sources : [])],
+  };
+}
+
 function inspectedArguments(name, args) {
   const positionals = args.filter((argument) => !argument.startsWith("-"));
   const read = FILE_READERS.has(name) ? args : [];
-  if (FILE_MOVERS.has(name)) return { read: positionals.slice(0, -1), written: positionals.slice(-1) };
-  if (FILE_WRITERS.has(name) || editsInPlace(name, args)) return { read, written: positionals };
-  if (name === "dd") return { read, written: args.filter((argument) => /^of=/.test(argument)).map((a) => a.slice(3)) };
-  return { read, written: [] };
+  if (FILE_MOVERS.has(name)) return moverArguments(name, positionals);
+  if (FILE_DELETERS.has(name)) return { read, written: [], removed: positionals };
+  if (FILE_WRITERS.has(name) || editsInPlace(name, args)) return { read, written: positionals, removed: [] };
+  if (name === "dd") {
+    return { read, written: args.filter((argument) => /^of=/.test(argument)).map((a) => a.slice(3)), removed: [] };
+  }
+  return { read, written: [], removed: [] };
 }
 
 export function checkWrittenPaths(written, context) {
@@ -155,11 +175,17 @@ export function checkWrittenPaths(written, context) {
   return ALLOW;
 }
 
+export function checkRemovedPaths(removed, context) {
+  const written = checkWrittenPaths(removed, context);
+  if (written.block || written.ask) return written;
+  return removed.some((path) => coversOwnLimits(path, context)) ? OWN_LIMITS_ASK : ALLOW;
+}
+
 export function checkFileAccess(name, args, context) {
-  const { read, written } = inspectedArguments(name, args);
+  const { read, written, removed } = inspectedArguments(name, args);
   if (read.some(isProtectedEnvFile)) return deny("Blocked: reading .env files exposes secrets.");
   if (read.some((argument) => matchesBlockedPath(argument, context.config.blockedPaths.read, context))) {
     return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
   }
-  return checkWrittenPaths(written, context);
+  return firstBlock([checkWrittenPaths(written, context), checkRemovedPaths(removed, context)]);
 }

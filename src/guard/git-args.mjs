@@ -26,22 +26,28 @@ const PUSH_OPTIONS_WITH_VALUE = new Set(["-o", "--push-option", "--receive-pack"
 const MESSAGE_OPTIONS = new Set(["-m", "-F", "--message"]);
 
 export function gitInvocation(args) {
-  const configEntries = [];
+  const inlineConfig = [];
+  const envConfig = [];
   const directories = [];
   let index = 0;
   while (index < args.length && args[index].startsWith("-")) {
     const option = args[index];
-    if (option === "-C" && index + 1 < args.length) directories.push(args[index + 1]);
-    if ((option === "-c" || option === "--config-env") && index + 1 < args.length) {
-      configEntries.push(args[index + 1]);
-    } else if (/^-c./.test(option)) {
-      configEntries.push(option.slice(2));
-    } else if (option.startsWith("--config-env=")) {
-      configEntries.push(option.slice("--config-env=".length));
-    }
+    const next = index + 1 < args.length ? args[index + 1] : undefined;
+    if (option === "-C" && next !== undefined) directories.push(next);
+    if (option === "-c" && next !== undefined) inlineConfig.push(next);
+    else if (option === "--config-env" && next !== undefined) envConfig.push(next);
+    else if (/^-c./.test(option)) inlineConfig.push(option.slice(2));
+    else if (option.startsWith("--config-env=")) envConfig.push(option.slice("--config-env=".length));
     index += GIT_OPTIONS_WITH_VALUE.has(option) ? 2 : 1;
   }
-  return { configEntries, directories, subcommand: args[index], rest: args.slice(index + 1) };
+  return {
+    configEntries: [...inlineConfig, ...envConfig],
+    inlineConfig,
+    envConfig,
+    directories,
+    subcommand: args[index],
+    rest: args.slice(index + 1),
+  };
 }
 
 export function splitOptionsAndPositionals(rest) {

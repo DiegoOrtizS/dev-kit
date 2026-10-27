@@ -9,7 +9,9 @@ import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
 import { SHELL_ALIAS_WITH_ARGUMENTS, expandGitAlias } from "./git-alias.mjs";
-import { checkInlineCode } from "./interpreters.mjs";
+import { environmentCommands, gitConfigCommands } from "./config-commands.mjs";
+import { checkDotNetFileCalls, checkInlineCode } from "./interpreters.mjs";
+import { HIDDEN_COMMAND, aliasDefinitions, hidesCommand } from "./shell-aliases.mjs";
 import { guardIo } from "./io.mjs";
 import { checkPatchCommand } from "./patches.mjs";
 import { checkPipes } from "./pipes.mjs";
@@ -35,20 +37,52 @@ function checkFindExec(args, context, dialect) {
   return firstBlock(verdicts);
 }
 
+function checkConfiguredCommands(commands, context) {
+  return firstBlock(
+    commands.map(({ source, script }) =>
+      script === null || /[$`]/.test(script) ? unreadableScript(source) : checkScript(script, context, BASH),
+    ),
+  );
+}
+
+function checkEnvironment(assignments, context) {
+  return firstBlock([
+    checkAssignments(assignments),
+    checkConfiguredCommands(environmentCommands(assignments), context),
+  ]);
+}
+
+function checkGitAlias(alias, context, dialect, input) {
+  if ("verdict" in alias) return alias.verdict;
+  if ("args" in alias) return checkWords(["git", ...alias.args], context, dialect, input);
+  const verdict = checkScript(alias.script, { ...context, cwd: context.repoRoot }, BASH);
+  return firstBlock([verdict, alias.dynamic ? SHELL_ALIAS_WITH_ARGUMENTS : ALLOW]);
+}
+
 function checkWords(words, context, dialect = BASH, input = undefined) {
   const { assignments, rest } = stripPrefixes(words);
-  const assignmentVerdict = checkAssignments(assignments);
-  if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
+  return firstBlock([
+    checkEnvironment(assignments, context),
+    rest.length === 0 ? ALLOW : checkCommand(rest, context, dialect, input),
+  ]);
+}
+
+function checkCommand(rest, context, dialect, input) {
   const [command, ...args] = rest;
   if (isDynamicCommand(command, args, dialect)) return unreadableScript(command);
   const name = commandName(command);
+  const definitions = aliasDefinitions(name, args, dialect);
+  if (definitions.length > 0) {
+    if (hidesCommand(definitions)) return HIDDEN_COMMAND;
+    return firstBlock(definitions.map((text) => checkScript(text, context, dialect)));
+  }
   const launched = launchedWords(name, args);
   if (launched !== null) return checkWords(launched, context, dialect, input);
   const wrapped = reanchored(rest, dialect);
   if (wrapped !== null) return checkWords(wrapped, context, dialect, input);
-  if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));
+  if (ENV_EXPORTERS.has(name)) return checkEnvironment(args.map(asAssignment).filter(Boolean), context);
   const setters = setterAssignments(name, args, dialect);
-  if (setters !== null && setters.length > 0) return checkAssignments(setters);
+  if (setters !== null && setters.length > 0) return checkEnvironment(setters, context);
   const nested = scriptFromShell(name, args);
   if (nested !== null) {
     return isDynamic(nested.script) ? unreadableScript(name) : checkScript(nested.script, context, nested.dialect);
@@ -57,17 +91,13 @@ function checkWords(words, context, dialect = BASH, input = undefined) {
     return isDynamic(args.join(" ")) ? unreadableScript(name) : checkScript(args.join(" "), context, dialect);
   }
   const alias = name === "git" ? expandGitAlias(args, context) : null;
-  if (alias !== null && "verdict" in alias) return alias.verdict;
-  if (alias !== null && "args" in alias) return checkWords(["git", ...alias.args], context, dialect, input);
-  if (alias !== null) {
-    const verdict = checkScript(alias.script, { ...context, cwd: context.repoRoot }, BASH);
-    return firstBlock([verdict, alias.dynamic ? SHELL_ALIAS_WITH_ARGUMENTS : ALLOW]);
-  }
+  if (alias !== null) return checkGitAlias(alias, context, dialect, input);
   if (name === "lefthook" && args.includes("uninstall")) {
     return deny("Blocked: lefthook uninstall removes the git hooks.");
   }
   return firstBlock([
     name === "git" ? checkGit(args, context, input) : ALLOW,
+    name === "git" ? checkConfiguredCommands(gitConfigCommands(args), context) : ALLOW,
     name === "patch" ? checkPatchCommand(args, context, input) : ALLOW,
     name === "gh" ? checkGh(args) : ALLOW,
     name === "find" ? checkFindExec(args, context, dialect) : ALLOW,
@@ -83,7 +113,8 @@ function checkScript(script, context, dialect = BASH) {
   const stdin = stdinScripts(found, dialect);
   const inputs = segmentInputs(found, dialect);
   return firstBlock([
-    checkAssignments(environmentCalls(script, dialect)),
+    checkEnvironment(environmentCalls(script, dialect), context),
+    checkDotNetFileCalls(script, dialect),
     ...found.segments.map((words) => checkWords(words, context, dialect, inputs.get(words))),
     ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
     ...stdin.opaque.map(unreadableScript),
