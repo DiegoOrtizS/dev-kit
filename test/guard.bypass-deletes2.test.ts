@@ -107,3 +107,25 @@ describe.runIf(process.platform === "win32")("home-based cygdrive on Windows", (
     expect(bash(`rm -rf ${userDir}/*`).block).toBe(true);
   });
 });
+
+describe("glob matching is linear, not catastrophic", () => {
+  it.each([
+    ["Bash", `rm -rf /c/${"*".repeat(40)}q`],
+    ["Bash", `rm -rf /c/${"*".repeat(60)}q`],
+    ["PowerShell", `Remove-Item -Recurse C:\${"*".repeat(40)}q`],
+  ])("decides %s under 100 ms", (tool, command) => {
+    const start = performance.now();
+    const run = tool === "Bash" ? bash : powershell;
+    run(command);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it("decides a 40-star pathspec under 100 ms", () => {
+    const start = performance.now();
+    evaluateToolCall(
+      { tool_name: "Bash", tool_input: { command: `git checkout HEAD -- '${"*".repeat(40)}q'` }, cwd: repoRoot },
+      { repoRoot, io },
+    );
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+});

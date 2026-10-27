@@ -5,7 +5,11 @@ const TARGET_DIR_ATTACHED = /^--target-directory=(.*)$/;
 const PS_DEST = /^-dest/i;
 const PS_PATH = /^-(?:path|literalpath|lp)$/i;
 const PS_VALUED =
-  /^-(?:filter|include|exclude|depth|force|recurse|container|passthru|whatif|confirm|erroraction|verbose)$/i;
+  /^-(?:filter|include|exclude|credential|erroraction|errorvariable|warningaction|warningvariable|outvariable|outbuffer|pipelinevariable|informationaction|informationvariable)$/i;
+
+function readable(value) {
+  return typeof value === "string" && !value.startsWith("(");
+}
 
 function forward(path) {
   return path.replace(/^</, "").replace(/\\/g, "/");
@@ -49,11 +53,17 @@ function powershellMover(args, flags) {
   for (let index = 0; index < args.length; index += 1) {
     const colon = /^(-[A-Za-z]+):(.*)$/.exec(args[index]);
     const flag = colon ? colon[1] : args[index];
-    if (PS_DEST.test(flag)) destination = colon ? colon[2] : args[(index += 1)];
-    else if (PS_PATH.test(flag)) paths.push(colon ? colon[2] : args[(index += 1)]);
-    else if (PS_VALUED.test(flag)) {
+    if (PS_DEST.test(flag)) {
+      const value = colon ? colon[2] : args[(index += 1)];
+      if (readable(value)) destination = value;
+    } else if (PS_PATH.test(flag)) {
+      const value = colon ? colon[2] : args[(index += 1)];
+      if (readable(value)) paths.push(...value.split(",").filter(Boolean));
+    } else if (PS_VALUED.test(flag)) {
       if (!colon) index += 1;
-    } else if (!args[index].startsWith("-")) positionals.push(args[index]);
+    } else if (readable(args[index]) && !args[index].startsWith("-")) {
+      positionals.push(...args[index].split(",").filter(Boolean));
+    }
   }
   if (destination === null) destination = positionals.pop() ?? null;
   const sources = paths.length > 0 ? paths : positionals;

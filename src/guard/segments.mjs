@@ -138,7 +138,7 @@ function scan(command, dialect, found, start, closer) {
       return i;
     } else if (dialect.bashSyntax && !inWord && (char === "<" || char === ">") && next === "(") {
       i = processSubstitution(char, i);
-    } else if (dialect.bashSyntax && char === "(" && inWord && /[@+!?*]$/.test(word)) {
+    } else if (dialect.bashSyntax && char === "(" && inWord && word !== "!" && /[@+!?*]$/.test(word)) {
       let groupDepth = 1;
       word += char;
       while (groupDepth > 0 && i + 1 < command.length) {

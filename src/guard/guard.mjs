@@ -8,7 +8,7 @@ import { checkFileAccess, checkWrittenPaths } from "./env-files.mjs";
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
-import { SHELL_ALIAS_WITH_ARGUMENTS, aliasContextUncertain, expandGitAlias } from "./git-alias.mjs";
+import { SHELL_ALIAS_WITH_ARGUMENTS, expandGitAlias, globalRepoChange, segmentChangesRepo } from "./git-alias.mjs";
 import { environmentCommands, gitConfigCommands } from "./config-commands.mjs";
 import { INTERPRETERS, checkDotNetFileCalls, checkInlineCode, checkInterpreterInput } from "./interpreters.mjs";
 import { HIDDEN_COMMAND, aliasDefinitions, hidesCommand } from "./shell-aliases.mjs";
@@ -114,11 +114,14 @@ function checkScript(script, context, dialect = BASH) {
   const found = splitSegments(script, dialect);
   const stdin = stdinScripts(found, dialect);
   const inputs = segmentInputs(found, dialect);
-  const local = aliasContextUncertain(found, script, dialect) ? { ...context, aliasUncertain: true } : context;
+  let uncertain = globalRepoChange(script, dialect);
   return firstBlock([
     checkEnvironment(environmentCalls(script, dialect), context),
     checkDotNetFileCalls(script, dialect),
-    ...found.segments.map((words) => checkWords(words, local, dialect, inputs.get(words))),
+    ...found.segments.map((words) => {
+      uncertain = uncertain || segmentChangesRepo(words, dialect);
+      return checkWords(words, uncertain ? { ...context, aliasUncertain: true } : context, dialect, inputs.get(words));
+    }),
     ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
     ...stdin.opaque.map(unreadableScript),
     checkPipes(found.pipes, context, dialect),

@@ -52,7 +52,8 @@ function bracketClass(bracket) {
   return `[${body.startsWith("!") ? `^${body.slice(1)}` : body}]`;
 }
 
-export function globRegExp(path, { crossSlash = false } = {}) {
+export function globRegExp(pattern, { crossSlash = false } = {}) {
+  const path = pattern.replace(/\*{2,}/g, "**");
   const any = crossSlash ? ".*" : "[^/]*";
   const one = crossSlash ? "." : "[^/]";
   let source = "";

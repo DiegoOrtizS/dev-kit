@@ -4,7 +4,7 @@ export type GitAliasExpansion = { verdict: Verdict } | { script: string; dynamic
 
 export const SHELL_ALIAS_WITH_ARGUMENTS: Verdict;
 export function expandGitAlias(args: string[], context: GuardContext): GitAliasExpansion | null;
-import type { Found } from "./segments.mjs";
 import type { Dialect } from "./dialects.mjs";
 
-export function aliasContextUncertain(found: Found, script: string, dialect: Dialect): boolean;
+export function segmentChangesRepo(words: string[], dialect: Dialect): boolean;
+export function globalRepoChange(script: string, dialect: Dialect): boolean;

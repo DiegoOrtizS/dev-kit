@@ -26,7 +26,7 @@ const WHOLE_TREE_ASK = ask(
 const UNREADABLE_PATHSPEC = ask(
   "This git command takes its paths from a file, and the guard cannot read whether they include the agent's limits or the git hooks. The repo owner must confirm it.",
 );
-const EXCLUDE_MAGIC = /^:(!|\^|\([^)]*exclude[^)]*\))/;
+const EXCLUDE_MAGIC = /^:(?:[/!^]*[!^]|\([^)]*\bexclude\b[^)]*\))/;
 const MAGIC = /^:(\/|\(([^)]*)\))?/;
 
 function pathspecPath(spec, context) {

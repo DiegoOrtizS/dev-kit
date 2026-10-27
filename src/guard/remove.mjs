@@ -4,6 +4,7 @@ import { BASH, POWERSHELL, commandName } from "./dialects.mjs";
 import { expandBraces, globRegExp, hasGlob, isWholeDirectorySegment, normalizeGlobs } from "./globs.mjs";
 import { isLongOption, isShortFlagCluster } from "./options.mjs";
 import { stripPrefixes } from "./prefixes.mjs";
+import { PS_REMOVERS, powershellRemoveTargets } from "./ps-remove.mjs";
 import { ALLOW, ask, deny } from "./verdict.mjs";
 
 export const DIRECTORY_CHANGERS = new Set(["cd", "pushd", "chdir", "set-location", "sl", "push-location"]);
@@ -21,15 +22,10 @@ const WORKING_DIRECTORY = /^(\$PWD|\$\{PWD\}|~\+|\$\(\s*(pwd|get-location|gl)\s*
 const TOPLEVEL =
   /^(\$\(\s*git\s+rev-parse\s+--show-toplevel\s*\)|`\s*git\s+rev-parse\s+--show-toplevel\s*`)(?=[\\/]|$)/;
 const EXTENDED_PREFIX = /^(?:\\\\|\/\/)[?.][\\/]/;
-const CYGDRIVE = /^\/(?:cygdrive|mnt)\/([A-Za-z])(?=[\\/]|$)/;
+const CYGDRIVE = /^(?:\/proc)?\/cygdrive\/([A-Za-z])(?=[\\/]|$)|^\/mnt\/([A-Za-z])(?=[\\/]|$)/;
 const UNRESOLVED_TARGET = /[$`]|%[^%\s]+%|^~-(?=[\\/]|$)/;
 export const REMOVE_COMMANDS = new Set(["rm", "remove-item", "ri", "rd", "rmdir", "del", "erase"]);
 const CMD_REMOVE_COMMANDS = new Set(["rd", "rmdir", "del", "erase"]);
-const PS_REMOVERS = new Set(["remove-item", "ri"]);
-const PS_PATH_FLAG = /^-(?:path|literalpath|lp)$/i;
-const PS_RECURSE_FLAG = /^-(?:recurse|r|force)$/i;
-const PS_VALUED_FLAG = /^-(?:filter|include|exclude|depth)$/i;
-const PS_UNREADABLE = /,|^@/;
 const CMD_SWITCH = /^\/[a-z?](:.*)?$/i;
 
 const CMD_SWITCH_CLUSTER = /^(?:\/[a-z?](?::[^/]*)?)+$/i;
@@ -69,10 +65,8 @@ export function expandHome(target) {
 }
 
 function resolveTarget(target, context) {
-  const cleaned = target
-    .replace(EXTENDED_PREFIX, "")
-    .replace(CYGDRIVE, "/$1")
-    .replace(TOPLEVEL, context.repoRoot.replace(/\\/g, "/"));
+  const prefixed = target.replace(EXTENDED_PREFIX, "").replace(CYGDRIVE, (_, a, b) => `/${a ?? b}`);
+  const cleaned = context.aliasUncertain ? prefixed : prefixed.replace(TOPLEVEL, context.repoRoot.replace(/\\/g, "/"));
   const user = USER_HOME.exec(cleaned);
   if (user !== null) return `${HOME_PARENT}/${user[1]}${cleaned.slice(user[0].length)}`;
   return expandHome(cleaned).replace(WORKING_DIRECTORY, context.cwd);
@@ -108,29 +102,6 @@ function expandCmdSwitches(args) {
   return args.flatMap((argument) =>
     CMD_SWITCH_CLUSTER.test(argument) ? argument.match(CMD_SWITCH_PIECE) : [argument],
   );
-}
-
-function powershellRemoveTargets(rawArgs) {
-  let recursive = false;
-  let unreadable = false;
-  const targets = [];
-  for (let index = 0; index < rawArgs.length; index += 1) {
-    const colon = /^(-[A-Za-z]+):(.*)$/.exec(rawArgs[index]);
-    const flag = colon ? colon[1] : rawArgs[index];
-    if (PS_RECURSE_FLAG.test(flag)) recursive = true;
-    else if (PS_PATH_FLAG.test(flag)) {
-      const value = colon ? colon[2] : rawArgs[(index += 1)];
-      if (value === undefined) continue;
-      if (PS_UNREADABLE.test(value)) unreadable = true;
-      else targets.push(value);
-    } else if (PS_VALUED_FLAG.test(flag)) {
-      if (!colon) index += 1;
-    } else if (!rawArgs[index].startsWith("-")) {
-      if (PS_UNREADABLE.test(rawArgs[index])) unreadable = true;
-      else targets.push(rawArgs[index]);
-    }
-  }
-  return { recursive, targets, unreadable };
 }
 
 export function removeTargets(name, rawArgs, dialect = BASH) {

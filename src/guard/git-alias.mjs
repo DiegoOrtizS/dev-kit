@@ -9,17 +9,18 @@ import { ask } from "./verdict.mjs";
 
 const GIT_REPO_ENV = /^(?:GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR)=/i;
 
-export function aliasContextUncertain(found, script, dialect) {
-  for (const words of found.segments) {
-    const { assignments, rest } = stripPrefixes(words);
-    if (assignments.some((assignment) => GIT_REPO_ENV.test(assignment))) return true;
-    const [command, ...args] = rest;
-    if (command === undefined) continue;
-    const name = commandName(command);
-    if (DIRECTORY_CHANGERS.has(name)) return true;
-    if (ENV_EXPORTERS.has(name) && args.map(asAssignment).some((a) => a !== null && GIT_REPO_ENV.test(a))) return true;
-    if ((setterAssignments(name, args, dialect) ?? []).some((a) => GIT_REPO_ENV.test(a))) return true;
-  }
+export function segmentChangesRepo(words, dialect) {
+  const { assignments, rest } = stripPrefixes(words);
+  if (assignments.some((assignment) => GIT_REPO_ENV.test(assignment))) return true;
+  const [command, ...args] = rest;
+  if (command === undefined) return false;
+  const name = commandName(command);
+  if (DIRECTORY_CHANGERS.has(name)) return true;
+  if (ENV_EXPORTERS.has(name) && args.map(asAssignment).some((a) => a !== null && GIT_REPO_ENV.test(a))) return true;
+  return (setterAssignments(name, args, dialect) ?? []).some((a) => GIT_REPO_ENV.test(a));
+}
+
+export function globalRepoChange(script, dialect) {
   return environmentCalls(script, dialect).some((assignment) => GIT_REPO_ENV.test(assignment));
 }
 
