@@ -31,6 +31,7 @@ function scan(command, dialect, found, start, closer) {
   let skipNextWord = false;
   let heredocDelimiterNext = false;
   let hereStringNext = false;
+  let inputNext = false;
   let heredocs = [];
   let segmentStart = start;
   let pipedFrom = null;
@@ -41,10 +42,14 @@ function scan(command, dialect, found, start, closer) {
     if (heredocDelimiterNext) heredocs.push({ delimiter: word, owner: words });
     else if (hereStringNext) found.heredocs.push({ owner: words, body: word });
     else if (skipNextWord) found.written.push(word);
-    else words.push(word);
+    else {
+      words.push(word);
+      if (inputNext) found.inputs.push({ owner: words, path: word });
+    }
     heredocDelimiterNext = false;
     hereStringNext = false;
     skipNextWord = false;
+    inputNext = false;
   };
   const endWord = () => {
     if (inWord) finishWord();
@@ -56,6 +61,7 @@ function scan(command, dialect, found, start, closer) {
     skipNextWord = false;
     heredocDelimiterNext = false;
     hereStringNext = false;
+    inputNext = false;
     if (words.length > 0) {
       found.segments.push(words);
       if (pipedFrom !== null) found.pipes.push({ from: pipedFrom, to: words });
@@ -144,6 +150,7 @@ function scan(command, dialect, found, start, closer) {
       i += operator.length - 1;
       if (dialect.bashSyntax && operator === "<<<") hereStringNext = true;
       else if (dialect.bashSyntax && operator.startsWith("<<")) heredocDelimiterNext = true;
+      else if (operator === "<") inputNext = true;
       else if (!operator.startsWith("<")) skipNextWord = true;
     } else if (dialect.breaks.has(char)) {
       if (char === "(") depth += 1;
@@ -176,7 +183,7 @@ function scan(command, dialect, found, start, closer) {
 }
 
 export function splitSegments(command, dialect = BASH) {
-  const found = { segments: [], heredocs: [], written: [], pipes: [] };
+  const found = { segments: [], heredocs: [], written: [], pipes: [], inputs: [] };
   scan(command, dialect, found, 0, null);
   return found;
 }

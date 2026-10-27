@@ -60,6 +60,14 @@ const GIT_HOOK_FILES =
 const ENV_FILE = /^\.env(\..+)?$/;
 const ENV_ALLOWED = /^\.env\.(.+\.)?example$|^\.env\.test$/;
 const OWN_LIMITS = [/^\.claude\/settings(\.local)?\.json$/i, /^\.claude\/guard\.json$/i, /^tools\/claude-hooks\//i];
+const OWN_LIMITS_DIRECTORIES = [/^\.claude$/i, /^tools$/i];
+export const OWN_LIMITS_SAMPLES = [
+  ".claude/settings.json",
+  ".claude/settings.local.json",
+  ".claude/guard.json",
+  "tools/claude-hooks/guard.mjs",
+  "tools/claude-hooks/lint-after-edit.mjs",
+];
 const WINDOWS = process.platform === "win32";
 
 function cleanArgument(argument) {
@@ -77,11 +85,22 @@ function comparable(path) {
   return WINDOWS ? normalized.toLowerCase() : normalized;
 }
 
-export function repoRelativePath(path, context) {
+export function relativeToRepo(path, context) {
   const target = comparable(expandHome(cleanArgument(path)));
   const absolute = target.startsWith("/") ? target : posix.join(comparable(context.cwd), target);
   const fromRoot = posix.relative(comparable(context.repoRoot), absolute);
-  return fromRoot === "" || fromRoot.startsWith("..") ? null : fromRoot;
+  return fromRoot.startsWith("..") ? null : fromRoot;
+}
+
+export function repoRelativePath(path, context) {
+  const fromRoot = relativeToRepo(path, context);
+  return fromRoot === "" ? null : fromRoot;
+}
+
+export function coversOwnLimits(path, context) {
+  const fromRoot = relativeToRepo(path, context);
+  if (fromRoot === null) return false;
+  return fromRoot === "" || touchesOwnLimits(path, context) || OWN_LIMITS_DIRECTORIES.some((dir) => dir.test(fromRoot));
 }
 
 function matchesAny(fromRoot, patterns) {

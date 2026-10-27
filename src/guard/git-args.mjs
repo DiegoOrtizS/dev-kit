@@ -27,9 +27,11 @@ const MESSAGE_OPTIONS = new Set(["-m", "-F", "--message"]);
 
 export function gitInvocation(args) {
   const configEntries = [];
+  const directories = [];
   let index = 0;
   while (index < args.length && args[index].startsWith("-")) {
     const option = args[index];
+    if (option === "-C" && index + 1 < args.length) directories.push(args[index + 1]);
     if ((option === "-c" || option === "--config-env") && index + 1 < args.length) {
       configEntries.push(args[index + 1]);
     } else if (/^-c./.test(option)) {
@@ -39,7 +41,7 @@ export function gitInvocation(args) {
     }
     index += GIT_OPTIONS_WITH_VALUE.has(option) ? 2 : 1;
   }
-  return { configEntries, subcommand: args[index], rest: args.slice(index + 1) };
+  return { configEntries, directories, subcommand: args[index], rest: args.slice(index + 1) };
 }
 
 export function splitOptionsAndPositionals(rest) {

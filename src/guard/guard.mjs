@@ -9,13 +9,15 @@ import { environmentCalls, setterAssignments } from "./env-setters.mjs";
 import { findDeleteTargets } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
 import { checkInlineCode } from "./interpreters.mjs";
+import { guardIo } from "./io.mjs";
+import { checkPatchCommand } from "./patches.mjs";
 import { checkPipes } from "./pipes.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkDeleteAfterChdir, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
 import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
-import { isDynamic, isDynamicCommand, stdinScripts, unreadableScript } from "./stdin.mjs";
+import { isDynamic, isDynamicCommand, segmentInputs, stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 import { checkFileTool } from "./write-tools.mjs";
 
@@ -32,7 +34,7 @@ function checkFindExec(args, context, dialect) {
   return firstBlock(verdicts);
 }
 
-function checkWords(words, context, dialect = BASH) {
+function checkWords(words, context, dialect = BASH, input = undefined) {
   const { assignments, rest } = stripPrefixes(words);
   const assignmentVerdict = checkAssignments(assignments);
   if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
@@ -40,9 +42,9 @@ function checkWords(words, context, dialect = BASH) {
   if (isDynamicCommand(command, args, dialect)) return unreadableScript(command);
   const name = commandName(command);
   const launched = launchedWords(name, args);
-  if (launched !== null) return checkWords(launched, context, dialect);
+  if (launched !== null) return checkWords(launched, context, dialect, input);
   const wrapped = reanchored(rest, dialect);
-  if (wrapped !== null) return checkWords(wrapped, context, dialect);
+  if (wrapped !== null) return checkWords(wrapped, context, dialect, input);
   if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));
   const setters = setterAssignments(name, args, dialect);
   if (setters !== null && setters.length > 0) return checkAssignments(setters);
@@ -57,7 +59,8 @@ function checkWords(words, context, dialect = BASH) {
     return deny("Blocked: lefthook uninstall removes the git hooks.");
   }
   return firstBlock([
-    name === "git" ? checkGit(args, context) : ALLOW,
+    name === "git" ? checkGit(args, context, input) : ALLOW,
+    name === "patch" ? checkPatchCommand(args, context, input) : ALLOW,
     name === "gh" ? checkGh(args) : ALLOW,
     name === "find" ? checkFindExec(args, context, dialect) : ALLOW,
     checkSst(rest),
@@ -70,9 +73,10 @@ function checkWords(words, context, dialect = BASH) {
 function checkScript(script, context, dialect = BASH) {
   const found = splitSegments(script, dialect);
   const stdin = stdinScripts(found, dialect);
+  const inputs = segmentInputs(found, dialect);
   return firstBlock([
     checkAssignments(environmentCalls(script, dialect)),
-    ...found.segments.map((words) => checkWords(words, context, dialect)),
+    ...found.segments.map((words) => checkWords(words, context, dialect, inputs.get(words))),
     ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
     ...stdin.opaque.map(unreadableScript),
     checkPipes(found.pipes, context),
@@ -88,6 +92,7 @@ export function evaluateToolCall({ tool_name: toolName, tool_input: toolInput, c
     cwd: workingDirectory,
     repoRoot: options.repoRoot ?? workingDirectory,
     config: options.config ?? normalizeConfig(),
+    io: guardIo(options.io),
   };
   if (SCRIPT_TOOLS.has(toolName)) {
     return typeof input.command === "string"

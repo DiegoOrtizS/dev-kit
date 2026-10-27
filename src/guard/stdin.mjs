@@ -51,6 +51,28 @@ function literalText(from, found, dialect) {
   return null;
 }
 
+const FILE_PRINTERS = new Set(["cat", "type", "get-content", "gc"]);
+
+function pipeInput(from, found, dialect) {
+  const text = literalText(from, found, dialect);
+  if (text !== null) return { text };
+  const [command, ...args] = stripPrefixes(from.words).rest;
+  const printsFiles =
+    command !== undefined &&
+    FILE_PRINTERS.has(commandName(command)) &&
+    args.length > 0 &&
+    !args.some((argument) => argument.startsWith("-") || /[$`]/.test(argument));
+  return printsFiles ? { files: args } : { unknown: true };
+}
+
+export function segmentInputs(found, dialect) {
+  const inputs = new Map();
+  for (const { from, to } of found.pipes) inputs.set(to, pipeInput(from, found, dialect));
+  for (const { owner, body } of found.heredocs) inputs.set(owner, { text: body });
+  for (const { owner, path } of found.inputs) inputs.set(owner, { files: [path], redirected: path });
+  return inputs;
+}
+
 function expressionScript(words, fed) {
   const [command, ...args] = stripPrefixes(words).rest;
   if (command === undefined || !EXPRESSION_RUNNERS.has(commandName(command))) return null;
