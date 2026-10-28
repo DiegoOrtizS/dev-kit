@@ -2,59 +2,82 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadConfig, normalizeConfig } from "../config.mjs";
-import { findSecrets } from "../guardrails/rules.mjs";
 import { ENV_EXPORTERS, launchedWords, reanchored } from "./anchors.mjs";
 import { BASH, POWERSHELL, commandName, scriptFromShell } from "./dialects.mjs";
-import {
-  GIT_HOOKS_ASK,
-  OWN_LIMITS_ASK,
-  checkFileAccess,
-  checkWrittenPaths,
-  matchesBlockedPath,
-  touchesGitHooks,
-  touchesOwnLimits,
-} from "./env-files.mjs";
+import { checkFileAccess, checkWrittenPaths } from "./env-files.mjs";
 import { environmentCalls, setterAssignments } from "./env-setters.mjs";
-import { findDeleteTargets } from "./find.mjs";
+import { checkFindExec } from "./find.mjs";
 import { checkGh } from "./gh.mjs";
-import { checkInlineCode } from "./interpreters.mjs";
+import {
+  SHELL_ALIAS_WITH_ARGUMENTS,
+  UNRESOLVED_ALIAS,
+  expandGitAlias,
+  globalRepoChange,
+  segmentChangesRepo,
+} from "./git-alias.mjs";
+import { environmentCommands, gitConfigCommands } from "./config-commands.mjs";
+import { INTERPRETERS, checkDotNetFileCalls, checkInlineCode, checkInterpreterInput } from "./interpreters.mjs";
+import { HIDDEN_COMMAND, aliasDefinitions, hidesCommand } from "./shell-aliases.mjs";
+import { guardIo } from "./io.mjs";
+import { checkPatchCommand } from "./patches.mjs";
 import { checkPipes } from "./pipes.mjs";
 import { checkAssignments, checkGit } from "./git.mjs";
 import { REMOVE_COMMANDS, checkDeleteAfterChdir, checkRemove } from "./remove.mjs";
 import { asAssignment, stripPrefixes } from "./prefixes.mjs";
 import { splitSegments } from "./segments.mjs";
 import { checkSst } from "./sst.mjs";
-import { isDynamic, isDynamicCommand, stdinScripts, unreadableScript } from "./stdin.mjs";
+import { isDynamic, isDynamicCommand, segmentInputs, stdinScripts, unreadableScript } from "./stdin.mjs";
 import { ALLOW, deny, firstBlock } from "./verdict.mjs";
+import { checkFileTool } from "./write-tools.mjs";
 
 const SCRIPT_TOOLS = new Set(["Bash", "PowerShell", "Monitor"]);
-const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+const DEFAULT_BUDGET_MS = 8000;
 
-function checkFindExec(args, context, dialect) {
-  const verdicts = [];
-  for (let i = 0; i < args.length; i += 1) {
-    if (!["-exec", "-execdir", "-ok", "-okdir"].includes(args[i])) continue;
-    const end = args.findIndex((argument, index) => index > i && (argument === ";" || argument === "+"));
-    verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context, dialect));
-  }
-  verdicts.push(checkRemove("find", ["-r", ...findDeleteTargets(args)], context));
-  return firstBlock(verdicts);
+function checkConfiguredCommands(commands, context) {
+  const check = ({ source, script }) =>
+    script === null || /[$`]/.test(script) ? unreadableScript(source) : checkScript(script, context, BASH);
+  return firstBlock(commands.map(check));
 }
 
-function checkWords(words, context, dialect = BASH) {
+function checkEnvironment(assignments, context) {
+  return firstBlock([
+    checkAssignments(assignments),
+    checkConfiguredCommands(environmentCommands(assignments), context),
+  ]);
+}
+
+function resolveAliasVerdict(alias, context, dialect, input) {
+  const base = { ...context, aliasUncertain: false };
+  if ("verdict" in alias) return alias.verdict;
+  if ("args" in alias) return checkWords(["git", ...alias.args], base, dialect, input);
+  const verdict = checkScript(alias.script, { ...base, cwd: context.repoRoot }, BASH);
+  return firstBlock([verdict, alias.dynamic ? SHELL_ALIAS_WITH_ARGUMENTS : ALLOW]);
+}
+
+function checkWords(words, context, dialect = BASH, input = undefined) {
   const { assignments, rest } = stripPrefixes(words);
-  const assignmentVerdict = checkAssignments(assignments);
-  if (assignmentVerdict.block || rest.length === 0) return assignmentVerdict;
+  return firstBlock([
+    checkEnvironment(assignments, context),
+    rest.length === 0 ? ALLOW : checkCommand(rest, context, dialect, input),
+  ]);
+}
+
+function checkCommand(rest, context, dialect, input) {
   const [command, ...args] = rest;
   if (isDynamicCommand(command, args, dialect)) return unreadableScript(command);
   const name = commandName(command);
+  const definitions = aliasDefinitions(name, args, dialect);
+  if (definitions.length > 0) {
+    if (hidesCommand(definitions)) return HIDDEN_COMMAND;
+    return firstBlock(definitions.map((text) => checkScript(text, context, dialect)));
+  }
   const launched = launchedWords(name, args);
-  if (launched !== null) return checkWords(launched, context, dialect);
+  if (launched !== null) return checkWords(launched, context, dialect, input);
   const wrapped = reanchored(rest, dialect);
-  if (wrapped !== null) return checkWords(wrapped, context, dialect);
-  if (ENV_EXPORTERS.has(name)) return checkAssignments(args.map(asAssignment).filter(Boolean));
+  if (wrapped !== null) return checkWords(wrapped, context, dialect, input);
+  if (ENV_EXPORTERS.has(name)) return checkEnvironment(args.map(asAssignment).filter(Boolean), context);
   const setters = setterAssignments(name, args, dialect);
-  if (setters !== null && setters.length > 0) return checkAssignments(setters);
+  if (setters !== null && setters.length > 0) return checkEnvironment(setters, context);
   const nested = scriptFromShell(name, args);
   if (nested !== null) {
     return isDynamic(nested.script) ? unreadableScript(name) : checkScript(nested.script, context, nested.dialect);
@@ -62,70 +85,47 @@ function checkWords(words, context, dialect = BASH) {
   if (name === "eval") {
     return isDynamic(args.join(" ")) ? unreadableScript(name) : checkScript(args.join(" "), context, dialect);
   }
+  const alias = name === "git" ? expandGitAlias(args, context) : null;
+  if (alias !== null) {
+    const verdict = resolveAliasVerdict(alias, context, dialect, input);
+    return context.aliasUncertain ? firstBlock([verdict, UNRESOLVED_ALIAS]) : verdict;
+  }
   if (name === "lefthook" && args.includes("uninstall")) {
     return deny("Blocked: lefthook uninstall removes the git hooks.");
   }
   return firstBlock([
-    name === "git" ? checkGit(args, context) : ALLOW,
+    name === "git" ? checkGit(args, context, input) : ALLOW,
+    name === "git" ? checkConfiguredCommands(gitConfigCommands(args), context) : ALLOW,
+    name === "patch" ? checkPatchCommand(args, context, input) : ALLOW,
     name === "gh" ? checkGh(args) : ALLOW,
-    name === "find" ? checkFindExec(args, context, dialect) : ALLOW,
+    name === "find" ? checkFindExec(args, context, dialect, checkWords) : ALLOW,
     checkSst(rest),
-    checkFileAccess(name, args, context),
-    REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context) : ALLOW,
+    checkFileAccess(name, args, context, dialect),
+    REMOVE_COMMANDS.has(name) ? checkRemove(name, args, context, dialect) : ALLOW,
     checkInlineCode(name, args),
+    INTERPRETERS.has(name) ? checkInterpreterInput(name, args, input, context.io.readTextFile) : ALLOW,
   ]);
 }
 
 function checkScript(script, context, dialect = BASH) {
   const found = splitSegments(script, dialect);
   const stdin = stdinScripts(found, dialect);
+  const inputs = segmentInputs(found, dialect);
+  let uncertain = globalRepoChange(script, dialect);
+  const base = { ...context, soleTopLevel: found.topLevel === 1 && !found.pipes.length && !found.heredocs.length };
   return firstBlock([
-    checkAssignments(environmentCalls(script, dialect)),
-    ...found.segments.map((words) => checkWords(words, context, dialect)),
+    checkEnvironment(environmentCalls(script, dialect), context),
+    checkDotNetFileCalls(script, dialect),
+    ...found.segments.map((words) => {
+      uncertain = uncertain || segmentChangesRepo(words, dialect);
+      return checkWords(words, uncertain ? { ...base, aliasUncertain: true } : base, dialect, inputs.get(words));
+    }),
     ...stdin.scripts.map((fed) => checkScript(fed.script, context, fed.dialect)),
     ...stdin.opaque.map(unreadableScript),
-    checkPipes(found.pipes, context),
+    checkPipes(found.pipes, context, dialect),
     checkWrittenPaths(found.written, context),
-    checkDeleteAfterChdir(found.segments),
+    checkDeleteAfterChdir(found.segments, dialect),
   ]);
-}
-
-function collectWrittenText(toolName, toolInput) {
-  if (toolName === "Write") return [toolInput.content];
-  if (toolName === "Edit") return [toolInput.new_string];
-  if (toolName === "NotebookEdit") return [toolInput.new_source];
-  if (toolName === "MultiEdit" && Array.isArray(toolInput.edits)) {
-    return toolInput.edits.map((edit) => edit?.new_string);
-  }
-  return [];
-}
-
-function checkWrittenText(toolName, toolInput) {
-  for (const text of collectWrittenText(toolName, toolInput)) {
-    if (typeof text !== "string") continue;
-    const [finding] = findSecrets(text);
-    if (finding) {
-      return deny(
-        `Blocked: the content looks like a secret (${finding.rule}, line ${finding.line}). Keep secrets in the platform's secret store and environment variables, never in the repository.`,
-      );
-    }
-  }
-  return ALLOW;
-}
-
-function checkFilePath(toolName, input, context) {
-  const path = input.file_path ?? input.notebook_path;
-  if (typeof path !== "string") return ALLOW;
-  const { blockedPaths } = context.config;
-  if (WRITE_TOOLS.has(toolName) && matchesBlockedPath(path, blockedPaths.write, context)) {
-    return deny("Blocked: this path is off limits for writing in this repository (.claude/guard.json).");
-  }
-  if (toolName === "Read" && matchesBlockedPath(path, blockedPaths.read, context)) {
-    return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
-  }
-  if (WRITE_TOOLS.has(toolName) && touchesOwnLimits(path, context)) return OWN_LIMITS_ASK;
-  if (WRITE_TOOLS.has(toolName) && touchesGitHooks(path)) return GIT_HOOKS_ASK;
-  return ALLOW;
 }
 
 export function evaluateToolCall({ tool_name: toolName, tool_input: toolInput, cwd }, options = {}) {
@@ -135,13 +135,16 @@ export function evaluateToolCall({ tool_name: toolName, tool_input: toolInput, c
     cwd: workingDirectory,
     repoRoot: options.repoRoot ?? workingDirectory,
     config: options.config ?? normalizeConfig(),
+    io: guardIo(options.io),
+    aliasCache: new Map(),
+    deadline: Date.now() + (options.budgetMs ?? DEFAULT_BUDGET_MS),
   };
   if (SCRIPT_TOOLS.has(toolName)) {
     return typeof input.command === "string"
       ? checkScript(input.command, context, toolName === "PowerShell" ? POWERSHELL : BASH)
       : ALLOW;
   }
-  return firstBlock([checkFilePath(toolName, input, context), checkWrittenText(toolName, input)]);
+  return checkFileTool(toolName, input, context);
 }
 
 function failClosed(reason) {

@@ -40,20 +40,20 @@ function producedPaths({ words, raw }) {
   return null;
 }
 
-function checkPipe({ from, to }, context) {
+function checkPipe({ from, to }, context, dialect) {
   const [command, ...args] = stripPrefixes(to).rest;
   if (command === undefined) return ALLOW;
   const name = commandName(command);
-  if (!REMOVE_COMMANDS.has(name) || !removeTargets(name, args).recursive) return ALLOW;
+  if (!REMOVE_COMMANDS.has(name) || !removeTargets(name, args, dialect).recursive) return ALLOW;
   const paths = producedPaths(from);
   if (paths === null) {
     return deny(
       `Blocked: ${name} would delete recursively whatever the pipe feeds it, and the guard cannot read that. Name the paths instead.`,
     );
   }
-  return checkRemove(name, [...args.filter((argument) => argument !== PLACEHOLDER), ...paths], context);
+  return checkRemove(name, [...args.filter((argument) => argument !== PLACEHOLDER), ...paths], context, dialect);
 }
 
-export function checkPipes(pipes, context) {
-  return firstBlock(pipes.map((pipe) => checkPipe(pipe, context)));
+export function checkPipes(pipes, context, dialect) {
+  return firstBlock(pipes.map((pipe) => checkPipe(pipe, context, dialect)));
 }

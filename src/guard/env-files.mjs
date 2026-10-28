@@ -1,6 +1,8 @@
 import { basename, posix } from "node:path";
+import { BASH } from "./dialects.mjs";
+import { moverTargets } from "./movers.mjs";
 import { expandHome } from "./remove.mjs";
-import { ALLOW, ask, deny } from "./verdict.mjs";
+import { ALLOW, ask, deny, firstBlock } from "./verdict.mjs";
 
 const FILE_READERS = new Set([
   "cat",
@@ -27,7 +29,10 @@ const FILE_READERS = new Set([
   "select-string",
   "sls",
 ]);
-const FILE_MOVERS = new Set(["cp", "mv", "ln", "install", "copy-item", "move-item", "cpi", "mi"]);
+const FILE_MOVERS = new Set(["cp", "mv", "ln", "install", "rsync", "copy-item", "move-item", "cpi", "mi"]);
+const FILE_RENAMERS = new Set(["mv", "move-item", "mi"]);
+const FILE_LINKERS = new Set(["ln"]);
+const FILE_DELETERS = new Set(["rm", "unlink", "shred", "remove-item", "ri", "del", "erase", "rd", "rmdir"]);
 const IN_PLACE_FLAGS = {
   sed: /^-[A-Za-z]*i|^--in-place/,
   perl: /^-[A-Za-z]*i/,
@@ -60,6 +65,14 @@ const GIT_HOOK_FILES =
 const ENV_FILE = /^\.env(\..+)?$/;
 const ENV_ALLOWED = /^\.env\.(.+\.)?example$|^\.env\.test$/;
 const OWN_LIMITS = [/^\.claude\/settings(\.local)?\.json$/i, /^\.claude\/guard\.json$/i, /^tools\/claude-hooks\//i];
+const OWN_LIMITS_DIRECTORIES = [/^\.claude$/i, /^tools$/i];
+export const OWN_LIMITS_SAMPLES = [
+  ".claude/settings.json",
+  ".claude/settings.local.json",
+  ".claude/guard.json",
+  "tools/claude-hooks/guard.mjs",
+  "tools/claude-hooks/lint-after-edit.mjs",
+];
 const WINDOWS = process.platform === "win32";
 
 function cleanArgument(argument) {
@@ -77,11 +90,22 @@ function comparable(path) {
   return WINDOWS ? normalized.toLowerCase() : normalized;
 }
 
-export function repoRelativePath(path, context) {
+export function relativeToRepo(path, context) {
   const target = comparable(expandHome(cleanArgument(path)));
   const absolute = target.startsWith("/") ? target : posix.join(comparable(context.cwd), target);
   const fromRoot = posix.relative(comparable(context.repoRoot), absolute);
-  return fromRoot === "" || fromRoot.startsWith("..") ? null : fromRoot;
+  return fromRoot.startsWith("..") ? null : fromRoot;
+}
+
+export function repoRelativePath(path, context) {
+  const fromRoot = relativeToRepo(path, context);
+  return fromRoot === "" ? null : fromRoot;
+}
+
+export function coversOwnLimits(path, context) {
+  const fromRoot = relativeToRepo(path, context);
+  if (fromRoot === null) return false;
+  return fromRoot === "" || touchesOwnLimits(path, context) || OWN_LIMITS_DIRECTORIES.some((dir) => dir.test(fromRoot));
 }
 
 function matchesAny(fromRoot, patterns) {
@@ -110,7 +134,7 @@ export const GIT_HOOKS_ASK = ask(
 );
 
 export function isFileCommand(name) {
-  return FILE_READERS.has(name) || FILE_MOVERS.has(name) || FILE_WRITERS.has(name);
+  return FILE_READERS.has(name) || FILE_MOVERS.has(name) || FILE_WRITERS.has(name) || FILE_DELETERS.has(name);
 }
 
 function editsInPlace(name, args) {
@@ -118,13 +142,18 @@ function editsInPlace(name, args) {
   return flag !== undefined && args.some((argument) => flag.test(argument));
 }
 
-function inspectedArguments(name, args) {
+function inspectedArguments(name, args, dialect) {
   const positionals = args.filter((argument) => !argument.startsWith("-"));
   const read = FILE_READERS.has(name) ? args : [];
-  if (FILE_MOVERS.has(name)) return { read: positionals.slice(0, -1), written: positionals.slice(-1) };
-  if (FILE_WRITERS.has(name) || editsInPlace(name, args)) return { read, written: positionals };
-  if (name === "dd") return { read, written: args.filter((argument) => /^of=/.test(argument)).map((a) => a.slice(3)) };
-  return { read, written: [] };
+  if (FILE_MOVERS.has(name)) {
+    return moverTargets(name, args, dialect, { rename: FILE_RENAMERS.has(name), link: FILE_LINKERS.has(name) });
+  }
+  if (FILE_DELETERS.has(name)) return { read, written: [], removed: positionals };
+  if (FILE_WRITERS.has(name) || editsInPlace(name, args)) return { read, written: positionals, removed: [] };
+  if (name === "dd") {
+    return { read, written: args.filter((argument) => /^of=/.test(argument)).map((a) => a.slice(3)), removed: [] };
+  }
+  return { read, written: [], removed: [] };
 }
 
 export function checkWrittenPaths(written, context) {
@@ -136,11 +165,17 @@ export function checkWrittenPaths(written, context) {
   return ALLOW;
 }
 
-export function checkFileAccess(name, args, context) {
-  const { read, written } = inspectedArguments(name, args);
+export function checkRemovedPaths(removed, context) {
+  const written = checkWrittenPaths(removed, context);
+  if (written.block || written.ask) return written;
+  return removed.some((path) => coversOwnLimits(path, context)) ? OWN_LIMITS_ASK : ALLOW;
+}
+
+export function checkFileAccess(name, args, context, dialect = BASH) {
+  const { read, written, removed } = inspectedArguments(name, args, dialect);
   if (read.some(isProtectedEnvFile)) return deny("Blocked: reading .env files exposes secrets.");
   if (read.some((argument) => matchesBlockedPath(argument, context.config.blockedPaths.read, context))) {
     return deny("Blocked: this path is off limits for reading in this repository (.claude/guard.json).");
   }
-  return checkWrittenPaths(written, context);
+  return firstBlock([checkWrittenPaths(written, context), checkRemovedPaths(removed, context)]);
 }

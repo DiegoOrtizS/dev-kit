@@ -1,7 +1,9 @@
 import { commandName } from "./dialects.mjs";
 import { stripPrefixes } from "./prefixes.mjs";
-import { REMOVE_COMMANDS } from "./remove.mjs";
+import { REMOVE_COMMANDS, checkRemove } from "./remove.mjs";
+import { firstBlock } from "./verdict.mjs";
 
+const EXEC_ACTIONS = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
 const FIND_GLOBAL_OPTION = /^-[HLP]$|^-O\d*$/;
 const NARROWING_PREDICATES = new Set([
   "-name",
@@ -56,4 +58,15 @@ function isNarrowed(args) {
 
 export function findDeleteTargets(args) {
   return deletesMatches(args) && !isNarrowed(args) ? findStartPaths(args) : [];
+}
+
+export function checkFindExec(args, context, dialect, checkWords) {
+  const verdicts = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (!EXEC_ACTIONS.has(args[i])) continue;
+    const end = args.findIndex((argument, index) => index > i && (argument === ";" || argument === "+"));
+    verdicts.push(checkWords(args.slice(i + 1, end === -1 ? args.length : end), context, dialect));
+  }
+  verdicts.push(checkRemove("find", ["-r", ...findDeleteTargets(args)], context));
+  return firstBlock(verdicts);
 }

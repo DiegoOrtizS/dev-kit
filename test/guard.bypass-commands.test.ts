@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { evaluateToolCall } from "../src/guard/guard.mjs";
 
-const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } });
-const powershell = (command: string) => evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } });
+const bash = (command: string) =>
+  evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io: { gitAlias: () => null } });
+const powershell = (command: string) =>
+  evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } }, { io: { gitAlias: () => null } });
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
   .replace(/\\/g, "/")

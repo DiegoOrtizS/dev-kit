@@ -8,6 +8,11 @@ const kitRoot = path.resolve(__dirname, "..");
 const guardHook = {
   type: "command",
   command: 'node "$(git rev-parse --show-toplevel)/tools/claude-hooks/guard.mjs" || exit 2',
+  onFailure: "block",
+};
+const guardHookNoFailure = {
+  type: "command",
+  command: 'node "$(git rev-parse --show-toplevel)/tools/claude-hooks/guard.mjs" || exit 2',
 };
 let repo: string;
 
@@ -64,6 +69,19 @@ describe("checkHookMatchers", () => {
     });
     expect(checkHookMatchers(repo)).toEqual([
       '.claude/settings.json: the PreToolUse matcher for tools/claude-hooks/guard.mjs lacks NotebookEdit; the template has "Bash|PowerShell|Monitor|Write|Edit|MultiEdit|NotebookEdit"',
+    ]);
+  });
+
+  it("reports a guard hook that lacks onFailure block", () => {
+    writeSettings({
+      hooks: {
+        PreToolUse: [
+          { matcher: "Bash|PowerShell|Monitor|Write|Edit|MultiEdit|NotebookEdit", hooks: [guardHookNoFailure] },
+        ],
+      },
+    });
+    expect(checkHookMatchers(repo)).toEqual([
+      '.claude/settings.json: the tools/claude-hooks/guard.mjs hook is missing "onFailure": "block"; without it a timed-out guard lets the call through (Claude Code >= 2.1.295). Copy it from dev-kit templates/claude/settings.json',
     ]);
   });
 

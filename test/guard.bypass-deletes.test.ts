@@ -1,13 +1,20 @@
+import { homedir } from "node:os";
+import { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { evaluateToolCall } from "../src/guard/guard.mjs";
 
-const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } });
-const powershell = (command: string) => evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } });
+const bash = (command: string) =>
+  evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io: { gitAlias: () => null } });
+const powershell = (command: string) =>
+  evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } }, { io: { gitAlias: () => null } });
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url))
   .replace(/\\/g, "/")
   .replace(/\/$/, "");
+const home = homedir().replace(/\\/g, "/");
+const homeParent = dirname(home);
+const siblingsOfRepo = `../${basename(repoRoot).slice(0, 4)}*`;
 
 describe("recursive delete of a glob", () => {
   it.each([
@@ -26,8 +33,40 @@ describe("recursive delete of a glob", () => {
     `rm -rf ${repoRoot}/**`,
     `rm -rf ${repoRoot}/.*`,
     "Remove-Item -Recurse -Force ~/.*",
+    "rm -rf ~/.[a-z]*",
+    "rm -rf ~/.[!.]*",
+    "rm -rf $HOME/.[!.]*",
+    "rm -rf ~/[a-z]*",
+    "rm -rf ~/.??*",
+    "rm -rf ~/{.,}*",
+    "rm -rf ~/.{ssh,aws}",
+    "rm -rf ~/.s*",
+    "rm -rf ~/.ss[h]",
+    "rm -rf ~/.c*",
+    "rm -rf ~/.config",
+    "rm -rf ~/.config/*",
+    "rm -rf ~/.ssh/[a-z]*",
+    "rm -rf [a-z]*",
+    `rm -rf ${homeParent}/*/.*`,
+    `rm -rf ${homeParent}/*/.ssh`,
+    `rm -rf ${homeParent}/*`,
+    `rm -rf ${siblingsOfRepo}`,
+    `rm -rf ${repoRoot}/.g*`,
+    `rm -rf ~${basename(home)}`,
   ])("blocks %s", (command) => {
     expect(bash(command).block).toBe(true);
+  });
+
+  it.each([
+    "Remove-Item -Recurse ~\\.*",
+    "Remove-Item -Recurse ~\\.[a-z]*",
+    "Remove-Item -Recurse -Force $env:USERPROFILE\\.[a-z]*",
+    "Remove-Item -Recurse -Force ${env:USERPROFILE}\\.ssh",
+    "Remove-Item -Recurse -Force $HOME\\.s*",
+    "ri -r ~\\[a-z]*",
+    `Remove-Item -Recurse ${homeParent.replace(/\//g, "\\")}\\*\\.ssh`,
+  ])("blocks %s in powershell", (command) => {
+    expect(powershell(command).block).toBe(true);
   });
 
   it.each([
@@ -40,9 +79,74 @@ describe("recursive delete of a glob", () => {
     "rm -rf node_modules/.cache/*",
     "rm -rf /tmp/x/*",
     "rm -rf ~/.cache/*",
-    "rm -rf ~/.[a-z]*",
+    "rm -rf ~/.cache/[a-z]*",
+    "rm -rf ~/.cache",
+    "rm -rf ~/.npm*",
+    "rm -rf ~/.config/nvim",
+    "rm -rf dist/[a-z]*",
+    "rm -rf node_modules/.{cache,vite}",
+    "rm -rf ./build-{a,b}",
+    "rm -rf build-[0-9]*",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
+  });
+
+  it.each(["Remove-Item -Recurse dist\\*", "Remove-Item -Recurse -Force ~\\.cache\\[a-z]*"])(
+    "allows %s in powershell",
+    (command) => {
+      expect(powershell(command).block).toBe(false);
+    },
+  );
+});
+
+describe("recursive delete of a path the guard cannot read", () => {
+  it.each([
+    "rm -rf $X",
+    'rm -rf "$D"/x',
+    'rm -rf "$PWD"',
+    "rm -rf $PWD/..",
+    'rm -rf "$(pwd)"',
+    "rm -rf $(pwd)",
+    "rm -rf `pwd`",
+    "rm -rf $(true) ~",
+    "rm -rf ~/$(echo .ssh)",
+    "rm -rf dist/$(echo x)",
+    "rm -rf ~+",
+    "rm -rf ~-",
+    "find $DIR -delete",
+    "cmd /c rd /s /q %HOMEDRIVE%%HOMEPATH%",
+  ])("blocks %s", (command) => {
+    expect(bash(command).block).toBe(true);
+  });
+
+  it.each([
+    "Remove-Item -Recurse -Force $(Get-Location)",
+    "Remove-Item -Recurse $env:SOMEDIR",
+    "Remove-Item -Path $target -Recurse",
+  ])("blocks %s in powershell", (command) => {
+    expect(powershell(command).block).toBe(true);
+  });
+
+  it.each([
+    "rm -f $X",
+    "rm $(git ls-files -o)",
+    'echo "$X" && rm -rf dist',
+    "rm -rf $PWD/dist",
+    'rm -rf "$(pwd)"/build',
+    "rm -rf `pwd`/build",
+  ])("allows %s", (command) => {
+    expect(bash(command).block).toBe(false);
+  });
+
+  it.each(["Remove-Item -Recurse $PWD\\dist", "Remove-Item -Recurse -Force $(Get-Location)\\build"])(
+    "allows %s in powershell",
+    (command) => {
+      expect(powershell(command).block).toBe(false);
+    },
+  );
+
+  it("explains that the target cannot be read", () => {
+    expect(bash("rm -rf $X").reason).toMatch(/cannot read/);
   });
 });
 

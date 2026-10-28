@@ -1,6 +1,9 @@
 import { gitInvocation, isGitConfigRead, parseGitConfig, parsePush, splitOptionsAndPositionals } from "./git-args.mjs";
+import { checkGitPaths } from "./git-paths.mjs";
+import { toFileSystemPath } from "./io.mjs";
 import { isLongOption, isShortFlagCluster } from "./options.mjs";
-import { ALLOW, deny } from "./verdict.mjs";
+import { checkGitPatch } from "./patches.mjs";
+import { ALLOW, deny, firstBlock } from "./verdict.mjs";
 
 const HOOK_DISABLING_ASSIGNMENT = [
   /^LEFTHOOK=(0|false)$/i,
@@ -62,7 +65,22 @@ function checkGitPush(rest, context) {
   return ALLOW;
 }
 
-export function checkGit(args, context) {
+function gitContext(directories, context) {
+  if (directories.length === 0) return context;
+  return { ...context, cwd: directories.reduce((cwd, directory) => toFileSystemPath(directory, cwd), context.cwd) };
+}
+
+export function checkGit(args, context, input) {
+  const { directories, subcommand, rest } = gitInvocation(args);
+  const local = gitContext(directories, context);
+  return firstBlock([
+    checkGitRules(args, context),
+    subcommand === "apply" || subcommand === "am" ? checkGitPatch(subcommand, rest, local, input) : ALLOW,
+    subcommand === undefined ? ALLOW : checkGitPaths(subcommand, rest, local),
+  ]);
+}
+
+function checkGitRules(args, context) {
   const { configEntries, subcommand, rest } = gitInvocation(args);
   if (configEntries.some((entry) => HOOKS_PATH_CONFIG.test(entry))) {
     return deny("Blocked: changing core.hooksPath skips the git hooks.");

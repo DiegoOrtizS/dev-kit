@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { evaluateToolCall } from "../src/guard/guard.mjs";
 
-const bash = (command: string) => evaluateToolCall({ tool_name: "Bash", tool_input: { command } });
-const monitor = (command: string) => evaluateToolCall({ tool_name: "Monitor", tool_input: { command } });
-const powershell = (command: string) => evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } });
+const bash = (command: string) =>
+  evaluateToolCall({ tool_name: "Bash", tool_input: { command } }, { io: { gitAlias: () => null } });
+const monitor = (command: string) =>
+  evaluateToolCall({ tool_name: "Monitor", tool_input: { command } }, { io: { gitAlias: () => null } });
+const powershell = (command: string) =>
+  evaluateToolCall({ tool_name: "PowerShell", tool_input: { command } }, { io: { gitAlias: () => null } });
 const token = ["ghp_", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0"].join("");
 
 describe("Monitor tool", () => {
@@ -104,5 +107,79 @@ describe("unknown wrappers", () => {
     "npx sst@latest dev",
   ])("allows %s", (command) => {
     expect(bash(command).block).toBe(false);
+  });
+});
+
+describe("shell aliases defined in the command", () => {
+  it.each([
+    "alias x='git push -f'",
+    "alias g=git",
+    "alias nuke='rm -rf ~'",
+    "alias ll='ls -la' x='git reset --hard'",
+    "alias x='echo hi; bash -c id'",
+    "alias peek='cat .env'",
+  ])("blocks %s", (command) => {
+    expect(bash(command).block).toBe(true);
+  });
+
+  it.each(["Set-Alias x git", "New-Alias -Name x -Value Remove-Item", "sal g git.exe", "Set-Alias -Name rr -Value rm"])(
+    "blocks %s in powershell",
+    (command) => {
+      expect(powershell(command).block).toBe(true);
+    },
+  );
+
+  it.each(["alias", "alias ll", "alias ll='ls -la'", "unalias x", "f() { echo hi; }; f"])("allows %s", (command) => {
+    expect(bash(command).block).toBe(false);
+  });
+
+  it.each(["Get-Alias", "Set-Alias np notepad"])("allows %s in powershell", (command) => {
+    expect(powershell(command).block).toBe(false);
+  });
+
+  it("still checks a function body defined in the command", () => {
+    expect(bash("f() { git push -f; }; f").block).toBe(true);
+  });
+});
+
+describe("git config that runs a command", () => {
+  it.each([
+    "git -c core.pager='rm -rf ~' log",
+    "git -c core.editor='git push -f' commit",
+    "git -c core.sshCommand='rm -rf ~' fetch",
+    "git -c credential.helper='!rm -rf ~' fetch",
+    "git -c diff.x.textconv='rm -rf ~' diff",
+    "git -c filter.x.smudge='rm -rf ~' checkout main",
+    "git -c core.pager='$EVIL' log",
+    "git --config-env=core.pager=PAGER_CMD log",
+    "git config core.pager 'rm -rf ~'",
+    "git config --global core.editor 'git push -f'",
+    "git config set sequence.editor 'rm -rf ~'",
+    "GIT_EDITOR='rm -rf ~' git commit",
+    "GIT_SSH_COMMAND='rm -rf ~' git fetch",
+    "PAGER='rm -rf ~' git log",
+    "export GIT_PAGER='git push -f'",
+    'GIT_EDITOR="$EVIL" git commit',
+  ])("blocks %s", (command) => {
+    expect(bash(command).block).toBe(true);
+  });
+
+  it("blocks a PowerShell editor variable that runs a forbidden command", () => {
+    expect(powershell("$env:GIT_EDITOR = 'rm -rf ~'; git commit").block).toBe(true);
+  });
+
+  it.each([
+    "git -c core.pager=cat log",
+    "git -c core.pager='less -R' log",
+    "git -c core.editor=true rebase --continue",
+    "GIT_EDITOR=true git rebase --continue",
+    "git -c credential.helper=manager fetch",
+    "git config core.editor 'code --wait'",
+    "git config --get core.pager",
+    "git config --unset core.pager",
+    "EDITOR=vim git commit",
+    "GIT_PAGER='less -R' git log",
+  ])("allows %s", (command) => {
+    expect(bash(command)).toEqual({ block: false });
   });
 });

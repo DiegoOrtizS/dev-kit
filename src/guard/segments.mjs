@@ -1,5 +1,6 @@
 import { readAnsiC } from "./ansi-c.mjs";
 import { BASH } from "./dialects.mjs";
+import { extglobGroupEnd } from "./extglob.mjs";
 
 const REDIRECT_OPERATOR = /^(?:&>>?|<<<|<<-?|<&|>&|>>|>\||<>|<|>)/;
 
@@ -31,6 +32,7 @@ function scan(command, dialect, found, start, closer) {
   let skipNextWord = false;
   let heredocDelimiterNext = false;
   let hereStringNext = false;
+  let inputNext = false;
   let heredocs = [];
   let segmentStart = start;
   let pipedFrom = null;
@@ -41,10 +43,14 @@ function scan(command, dialect, found, start, closer) {
     if (heredocDelimiterNext) heredocs.push({ delimiter: word, owner: words });
     else if (hereStringNext) found.heredocs.push({ owner: words, body: word });
     else if (skipNextWord) found.written.push(word);
-    else words.push(word);
+    else {
+      words.push(word);
+      if (inputNext) found.inputs.push({ owner: words, path: word });
+    }
     heredocDelimiterNext = false;
     hereStringNext = false;
     skipNextWord = false;
+    inputNext = false;
   };
   const endWord = () => {
     if (inWord) finishWord();
@@ -56,8 +62,10 @@ function scan(command, dialect, found, start, closer) {
     skipNextWord = false;
     heredocDelimiterNext = false;
     hereStringNext = false;
+    inputNext = false;
     if (words.length > 0) {
       found.segments.push(words);
+      if (closer === null) found.topLevel += 1;
       if (pipedFrom !== null) found.pipes.push({ from: pipedFrom, to: words });
       pipedFrom = null;
     }
@@ -72,6 +80,11 @@ function scan(command, dialect, found, start, closer) {
     const fed = { words: inner.length === 1 ? inner[0] : [], raw: command.slice(begin + 2, end) };
     if (operator === "<") found.pipes.push({ from: fed, to: words });
     else found.pipes.push({ from: { words, raw: command.slice(segmentStart, begin) }, to: fed.words });
+    return end;
+  };
+  const substitution = (begin, skip, closing) => {
+    const end = scan(command, dialect, found, begin + skip, closing);
+    word += command.slice(begin, end + 1);
     return end;
   };
   const startsRedirect = (char, next) =>
@@ -89,11 +102,9 @@ function scan(command, dialect, found, start, closer) {
         i += 1;
         if (next !== "\n") word += next;
       } else if (dialect.substitutionInQuotes && char === "$" && next === "(") {
-        i = scan(command, dialect, found, i + 2, ")");
-        word += "$(";
+        i = substitution(i, 2, ")");
       } else if (dialect.bashSyntax && char === "`") {
-        i = scan(command, dialect, found, i + 1, "`");
-        word += "`";
+        i = substitution(i, 1, "`");
       } else word += char;
     } else if (dialect.quotes.includes(char)) {
       quote = char;
@@ -113,6 +124,12 @@ function scan(command, dialect, found, start, closer) {
       quote = '"';
       inWord = true;
       i += 1;
+    } else if (char === "$" && next === "(" && (words.length > 0 || inWord)) {
+      i = substitution(i, 2, ")");
+      inWord = true;
+    } else if (dialect.bashSyntax && char === "`" && closer !== "`" && !inBacktick && (words.length > 0 || inWord)) {
+      i = substitution(i, 1, "`");
+      inWord = true;
     } else if (char === "$" && next === "(") {
       if (words.length === 0 && !inWord) substitutedCommandDepth = depth;
       endSegment(i);
@@ -123,6 +140,17 @@ function scan(command, dialect, found, start, closer) {
       return i;
     } else if (dialect.bashSyntax && !inWord && (char === "<" || char === ">") && next === "(") {
       i = processSubstitution(char, i);
+    } else if (
+      dialect.bashSyntax &&
+      char === "(" &&
+      inWord &&
+      word !== "!" &&
+      /[@+!?*]$/.test(word) &&
+      extglobGroupEnd(command, i) !== -1
+    ) {
+      const end = extglobGroupEnd(command, i);
+      word += command.slice(i, end + 1);
+      i = end;
     } else if (dialect.comments && !inWord && char === "#") {
       const lineEnd = command.indexOf("\n", i);
       i = (lineEnd === -1 ? command.length : lineEnd) - 1;
@@ -135,6 +163,7 @@ function scan(command, dialect, found, start, closer) {
       i += operator.length - 1;
       if (dialect.bashSyntax && operator === "<<<") hereStringNext = true;
       else if (dialect.bashSyntax && operator.startsWith("<<")) heredocDelimiterNext = true;
+      else if (operator === "<") inputNext = true;
       else if (!operator.startsWith("<")) skipNextWord = true;
     } else if (dialect.breaks.has(char)) {
       if (char === "(") depth += 1;
@@ -167,7 +196,7 @@ function scan(command, dialect, found, start, closer) {
 }
 
 export function splitSegments(command, dialect = BASH) {
-  const found = { segments: [], heredocs: [], written: [], pipes: [] };
+  const found = { segments: [], heredocs: [], written: [], pipes: [], inputs: [], topLevel: 0 };
   scan(command, dialect, found, 0, null);
   return found;
 }

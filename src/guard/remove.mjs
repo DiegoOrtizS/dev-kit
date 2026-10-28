@@ -1,20 +1,29 @@
 import { homedir } from "node:os";
 import { posix } from "node:path";
-import { commandName } from "./dialects.mjs";
+import { BASH, POWERSHELL, commandName } from "./dialects.mjs";
+import { expandBraces, globMatch, hasGlob, isWholeDirectorySegment, normalizeGlobs } from "./globs.mjs";
 import { isLongOption, isShortFlagCluster } from "./options.mjs";
 import { stripPrefixes } from "./prefixes.mjs";
+import { PS_REMOVERS, powershellRemoveTargets } from "./ps-remove.mjs";
 import { ALLOW, ask, deny } from "./verdict.mjs";
 
-const DIRECTORY_CHANGERS = new Set(["cd", "pushd", "chdir", "set-location", "sl", "push-location"]);
+export const DIRECTORY_CHANGERS = new Set(["cd", "pushd", "chdir", "set-location", "sl", "push-location"]);
 const ANCHORED_TARGET = /^([\\/]|[A-Za-z]:|~|\$HOME|\$\{HOME\}|%USERPROFILE%|\$env:)/i;
 const CHDIR_DELETE_ASK = ask(
   "A recursive delete follows a directory change in the same command, so its relative paths are judged against the wrong folder. The repo owner must confirm it.",
 );
 
 const HOME = homedir();
+const HOME_PARENT = posix.dirname(HOME.replace(/\\/g, "/"));
 
-const WHOLE_DIRECTORY_SEGMENTS = /^[*?.]+$/;
-const SENSITIVE_HOME_DIRECTORIES = [".ssh", ".aws", ".gnupg", ".config/gh", ".claude"];
+const SENSITIVE_HOME_DIRECTORIES = [".ssh", ".aws", ".gnupg", ".config", ".config/gh", ".claude"];
+const USER_HOME = /^~([A-Za-z_][\w.-]*)(?=[\\/]|$)/;
+const WORKING_DIRECTORY = /^(\$PWD|\$\{PWD\}|~\+|\$\(\s*(pwd|get-location|gl)\s*\)|`\s*pwd\s*`)(?=[\\/]|$)/i;
+const TOPLEVEL =
+  /^(\$\(\s*git\s+rev-parse\s+--show-toplevel\s*\)|`\s*git\s+rev-parse\s+--show-toplevel\s*`)(?=[\\/]|$)/;
+const EXTENDED_PREFIX = /^(?:\\\\|\/\/)[?.][\\/]/;
+const CYGDRIVE = /^(?:\/proc)?\/cygdrive\/([A-Za-z])(?=[\\/]|$)|^\/mnt\/([A-Za-z])(?=[\\/]|$)/;
+const UNRESOLVED_TARGET = /[$`]|%[^%\s]+%|^~-(?=[\\/]|$)/;
 export const REMOVE_COMMANDS = new Set(["rm", "remove-item", "ri", "rd", "rmdir", "del", "erase"]);
 const CMD_REMOVE_COMMANDS = new Set(["rd", "rmdir", "del", "erase"]);
 const CMD_SWITCH = /^\/[a-z?](:.*)?$/i;
@@ -55,23 +64,38 @@ export function expandHome(target) {
   );
 }
 
+function resolveTarget(target, context) {
+  const prefixed = target.replace(EXTENDED_PREFIX, "").replace(CYGDRIVE, (_, a, b) => `/${a ?? b}`);
+  const cleaned = context.soleTopLevel ? prefixed.replace(TOPLEVEL, context.repoRoot.replace(/\\/g, "/")) : prefixed;
+  const user = USER_HOME.exec(cleaned);
+  if (user !== null) return `${HOME_PARENT}/${user[1]}${cleaned.slice(user[0].length)}`;
+  return expandHome(cleaned).replace(WORKING_DIRECTORY, context.cwd);
+}
+
 function globFreeBase(target) {
-  const expanded = expandHome(target);
-  const segments = expanded.split(/[\\/]/).filter(Boolean);
-  if (segments.length > 0 && segments.every((segment) => WHOLE_DIRECTORY_SEGMENTS.test(segment))) return null;
-  while (segments.length > 0 && WHOLE_DIRECTORY_SEGMENTS.test(segments.at(-1)) && !/^\.\.?$/.test(segments.at(-1))) {
+  const segments = target.split(/[\\/]/).filter(Boolean);
+  if (segments.length > 0 && segments.every(isWholeDirectorySegment)) return null;
+  while (segments.length > 0 && isWholeDirectorySegment(segments.at(-1)) && !/^\.\.?$/.test(segments.at(-1))) {
     segments.pop();
   }
-  return `${/^[\\/]/.test(expanded) ? "/" : ""}${segments.join("/")}` || "/";
+  return `${/^[\\/]/.test(target) ? "/" : ""}${segments.join("/")}` || "/";
+}
+
+function absolutePath(path, context) {
+  const normalized = normalizePath(path);
+  return posix.normalize(normalized.startsWith("/") ? normalized : posix.join(normalizePath(context.cwd), normalized));
 }
 
 function targetsProtectedPath(target, context) {
-  const base = globFreeBase(target);
+  const protectedSet = protectedPaths(context.repoRoot);
+  const normalized = normalizeGlobs(target);
+  const base = globFreeBase(normalized);
   if (base === null) return true;
-  const normalized = normalizePath(base);
-  const absolute = normalized.startsWith("/") ? normalized : posix.join(normalizePath(context.cwd), normalized);
-  const resolved = posix.normalize(absolute);
-  return /^\/[a-z]$/.test(resolved) || protectedPaths(context.repoRoot).has(resolved);
+  const resolved = absolutePath(base, context);
+  if (/^\/[a-z]$/.test(resolved) || protectedSet.has(resolved)) return true;
+  if (!hasGlob(normalized)) return false;
+  const pattern = absolutePath(normalized, context);
+  return [...protectedSet].some((path) => globMatch(pattern, path));
 }
 
 function expandCmdSwitches(args) {
@@ -80,7 +104,8 @@ function expandCmdSwitches(args) {
   );
 }
 
-export function removeTargets(name, rawArgs) {
+export function removeTargets(name, rawArgs, dialect = BASH) {
+  if (dialect === POWERSHELL && PS_REMOVERS.has(name)) return powershellRemoveTargets(rawArgs);
   const args = CMD_REMOVE_COMMANDS.has(name) ? expandCmdSwitches(rawArgs) : rawArgs;
   const recursive = args.some(
     (argument) =>
@@ -93,10 +118,10 @@ export function removeTargets(name, rawArgs) {
   const targets = args.filter(
     (argument) => !argument.startsWith("-") && !(CMD_REMOVE_COMMANDS.has(name) && CMD_SWITCH.test(argument)),
   );
-  return { recursive, targets };
+  return { recursive, targets, unreadable: false };
 }
 
-export function checkDeleteAfterChdir(segments) {
+export function checkDeleteAfterChdir(segments, dialect = BASH) {
   let changed = false;
   for (const words of segments) {
     const [command, ...args] = stripPrefixes(words).rest;
@@ -104,17 +129,23 @@ export function checkDeleteAfterChdir(segments) {
     const name = commandName(command);
     if (DIRECTORY_CHANGERS.has(name)) changed = true;
     else if (changed && REMOVE_COMMANDS.has(name)) {
-      const { recursive, targets } = removeTargets(name, args);
+      const { recursive, targets } = removeTargets(name, args, dialect);
       if (recursive && targets.some((target) => !ANCHORED_TARGET.test(target))) return CHDIR_DELETE_ASK;
     }
   }
   return ALLOW;
 }
 
-export function checkRemove(name, rawArgs, context) {
-  const { recursive, targets } = removeTargets(name, rawArgs);
+export function checkRemove(name, rawArgs, context, dialect = BASH) {
+  const { recursive, targets, unreadable } = removeTargets(name, rawArgs, dialect);
   if (!recursive) return ALLOW;
-  return targets.some((target) => targetsProtectedPath(target, context))
+  const resolved = targets.flatMap((target) => expandBraces(target).map((alt) => resolveTarget(alt, context)));
+  if (unreadable || resolved.some((target) => UNRESOLVED_TARGET.test(target))) {
+    return deny(
+      `Blocked: ${name} would delete recursively a path built from a variable, a list or a substitution, and the guard cannot read it. Name the path instead.`,
+    );
+  }
+  return resolved.some((target) => targetsProtectedPath(target, context))
     ? deny(
         `Blocked: recursive delete of the repository root, the home folder, a drive or one of their ancestors (${name}).`,
       )

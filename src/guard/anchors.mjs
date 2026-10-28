@@ -11,7 +11,7 @@ const PRINTERS = new Set(["echo", "printf", "write-output", "write-host", "man",
 const PROCESS_STARTERS = new Set(["start-process", "saps"]);
 const STARTER_VALUED_FLAGS = /^-(verb|workingdirectory|wd|windowstyle|credential|redirect\w*|loaduserprofile)$/i;
 
-function isAnchor(word) {
+export function isAnchor(word) {
   const name = commandName(word);
   return (
     ANCHORS.has(name) ||
