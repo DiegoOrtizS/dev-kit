@@ -53,7 +53,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/src/guard/guard.mjs\" || exit 2"
+            "command": "node \"$(git rev-parse --show-toplevel)/src/guard/guard.mjs\" || exit 2",
+            "onFailure": "block"
           }
         ]
       }
