@@ -1,5 +1,6 @@
 import { readAnsiC } from "./ansi-c.mjs";
 import { BASH } from "./dialects.mjs";
+import { extglobGroupEnd } from "./extglob.mjs";
 
 const REDIRECT_OPERATOR = /^(?:&>>?|<<<|<<-?|<&|>&|>>|>\||<>|<|>)/;
 
@@ -64,6 +65,7 @@ function scan(command, dialect, found, start, closer) {
     inputNext = false;
     if (words.length > 0) {
       found.segments.push(words);
+      if (closer === null) found.topLevel += 1;
       if (pipedFrom !== null) found.pipes.push({ from: pipedFrom, to: words });
       pipedFrom = null;
     }
@@ -138,15 +140,17 @@ function scan(command, dialect, found, start, closer) {
       return i;
     } else if (dialect.bashSyntax && !inWord && (char === "<" || char === ">") && next === "(") {
       i = processSubstitution(char, i);
-    } else if (dialect.bashSyntax && char === "(" && inWord && word !== "!" && /[@+!?*]$/.test(word)) {
-      let groupDepth = 1;
-      word += char;
-      while (groupDepth > 0 && i + 1 < command.length) {
-        i += 1;
-        if (command[i] === "(") groupDepth += 1;
-        else if (command[i] === ")") groupDepth -= 1;
-        word += command[i];
-      }
+    } else if (
+      dialect.bashSyntax &&
+      char === "(" &&
+      inWord &&
+      word !== "!" &&
+      /[@+!?*]$/.test(word) &&
+      extglobGroupEnd(command, i) !== -1
+    ) {
+      const end = extglobGroupEnd(command, i);
+      word += command.slice(i, end + 1);
+      i = end;
     } else if (dialect.comments && !inWord && char === "#") {
       const lineEnd = command.indexOf("\n", i);
       i = (lineEnd === -1 ? command.length : lineEnd) - 1;
@@ -192,7 +196,7 @@ function scan(command, dialect, found, start, closer) {
 }
 
 export function splitSegments(command, dialect = BASH) {
-  const found = { segments: [], heredocs: [], written: [], pipes: [], inputs: [] };
+  const found = { segments: [], heredocs: [], written: [], pipes: [], inputs: [], topLevel: 0 };
   scan(command, dialect, found, 0, null);
   return found;
 }

@@ -39,7 +39,7 @@ const NEVER_ALIASED = new Set(
   write-tree`.split(/\s+/),
 );
 const LOOKUP_OPTIONS = new Set(["-C", "--git-dir", "--work-tree"]);
-const UNRESOLVED_ALIAS = ask(
+export const UNRESOLVED_ALIAS = ask(
   "git could not tell whether this subcommand is an alias, so the guard cannot read what it runs. The repo owner must confirm it.",
 );
 export const SHELL_ALIAS_WITH_ARGUMENTS = ask(
@@ -71,7 +71,6 @@ function lookupAlias(name, gitArgs, context) {
 export function expandGitAlias(args, context) {
   const { subcommand, rest } = gitInvocation(args);
   if (subcommand === undefined || NEVER_ALIASED.has(subcommand)) return null;
-  if (context.aliasUncertain) return { verdict: UNRESOLVED_ALIAS };
   const prefix = args.slice(0, args.length - rest.length - 1);
   const gitArgs = lookupArguments(prefix);
   const seen = new Set();

@@ -8,3 +8,4 @@ import type { Dialect } from "./dialects.mjs";
 
 export function segmentChangesRepo(words: string[], dialect: Dialect): boolean;
 export function globalRepoChange(script: string, dialect: Dialect): boolean;
+export const UNRESOLVED_ALIAS: Verdict;

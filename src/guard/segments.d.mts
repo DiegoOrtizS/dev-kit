@@ -26,6 +26,7 @@ export interface Found {
   written: string[];
   pipes: Pipe[];
   inputs: InputRedirect[];
+  topLevel: number;
 }
 
 export function splitSegments(command: string, dialect?: Dialect): Found;

@@ -53,12 +53,18 @@ describe("alias lookup when the repository context is uncertain", () => {
     "pushd ../other-repo; git st2",
     "GIT_DIR=../other-repo/.git git st2",
     "GIT_WORK_TREE=../other git st2",
-    "export GIT_DIR=../other/.git && git nuke",
-  ])("asks before %s", (command) => {
+  ])("asks before %s when the alias is benign", (command) => {
     const verdict = run(command, io);
     expect(verdict).toMatchObject({ block: false, ask: true });
     expect(verdict.reason).toMatch(/could not tell|repo/i);
   });
+
+  it.each(["cd ../other && git nuke", "export GIT_DIR=../other/.git && git nuke", "pushd ../other && git nuke"])(
+    "still blocks %s because the alias expands to a forbidden command",
+    (command) => {
+      expect(run(command, io).block).toBe(true);
+    },
+  );
 
   it("asks before a Set-Location before a git alias in powershell", () => {
     expect(psRun("Set-Location ../other; git st2", io)).toMatchObject({ block: false, ask: true });

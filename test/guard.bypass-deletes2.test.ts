@@ -128,4 +128,19 @@ describe("glob matching is linear, not catastrophic", () => {
     );
     expect(performance.now() - start).toBeLessThan(100);
   });
+
+  it.each([
+    ["Bash", `rm -rf /c/${"*?".repeat(40)}q`],
+    ["Bash", `rm -rf ~/${"*[a-z]".repeat(40)}q`],
+    ["Bash", `rm -rf /c/${"**?".repeat(20)}q`],
+    ["PowerShell", `Remove-Item -Recurse C:\\${"*?".repeat(40)}q`],
+    ["Bash", `git checkout HEAD -- '${"*?".repeat(40)}q'`],
+    ["Bash", `git checkout HEAD -- ':(glob)${"**/?".repeat(40)}q'`],
+    ["Bash", `git checkout HEAD -- '${"*[a-z]".repeat(40)}q'`],
+  ])("decides mixed-wildcard %s under 50 ms", (tool, command) => {
+    const start = performance.now();
+    const run = tool === "Bash" ? bash : powershell;
+    run(command);
+    expect(performance.now() - start).toBeLessThan(50);
+  });
 });

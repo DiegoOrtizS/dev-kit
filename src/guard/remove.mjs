@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { posix } from "node:path";
 import { BASH, POWERSHELL, commandName } from "./dialects.mjs";
-import { expandBraces, globRegExp, hasGlob, isWholeDirectorySegment, normalizeGlobs } from "./globs.mjs";
+import { expandBraces, globMatch, hasGlob, isWholeDirectorySegment, normalizeGlobs } from "./globs.mjs";
 import { isLongOption, isShortFlagCluster } from "./options.mjs";
 import { stripPrefixes } from "./prefixes.mjs";
 import { PS_REMOVERS, powershellRemoveTargets } from "./ps-remove.mjs";
@@ -66,7 +66,7 @@ export function expandHome(target) {
 
 function resolveTarget(target, context) {
   const prefixed = target.replace(EXTENDED_PREFIX, "").replace(CYGDRIVE, (_, a, b) => `/${a ?? b}`);
-  const cleaned = context.aliasUncertain ? prefixed : prefixed.replace(TOPLEVEL, context.repoRoot.replace(/\\/g, "/"));
+  const cleaned = context.soleTopLevel ? prefixed.replace(TOPLEVEL, context.repoRoot.replace(/\\/g, "/")) : prefixed;
   const user = USER_HOME.exec(cleaned);
   if (user !== null) return `${HOME_PARENT}/${user[1]}${cleaned.slice(user[0].length)}`;
   return expandHome(cleaned).replace(WORKING_DIRECTORY, context.cwd);
@@ -94,8 +94,8 @@ function targetsProtectedPath(target, context) {
   const resolved = absolutePath(base, context);
   if (/^\/[a-z]$/.test(resolved) || protectedSet.has(resolved)) return true;
   if (!hasGlob(normalized)) return false;
-  const pattern = globRegExp(absolutePath(normalized, context));
-  return [...protectedSet].some((path) => pattern.test(path));
+  const pattern = absolutePath(normalized, context);
+  return [...protectedSet].some((path) => globMatch(pattern, path));
 }
 
 function expandCmdSwitches(args) {

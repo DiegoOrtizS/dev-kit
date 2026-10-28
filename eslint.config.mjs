@@ -20,6 +20,7 @@ const config = [
     },
   },
   { files: ["test/**"], rules: { "max-lines": ["error", { max: 300, skipBlankLines: true }] } },
+  { files: ["test/**/*.fixture.ts"], rules: { "max-lines": "off" } },
   { ...tseslint.configs.disableTypeChecked, files: ["**/*.{js,mjs,cjs}"] },
   eslintConfigPrettier,
 ];

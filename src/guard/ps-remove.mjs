@@ -27,19 +27,23 @@ export function powershellRemoveTargets(rawArgs) {
   let unreadable = false;
   const targets = [];
   for (let index = 0; index < rawArgs.length; index += 1) {
-    const colon = /^(-[A-Za-z]+):(.*)$/.exec(rawArgs[index]);
-    const flag = colon ? colon[1] : rawArgs[index];
-    if (isRecurseFlag(flag)) recursive = true;
-    else if (isPathFlag(flag)) {
+    const token = rawArgs[index];
+    const colon = /^(-[A-Za-z]+):(.*)$/.exec(token);
+    const flag = colon ? colon[1] : token;
+    if (/^\/[a-z?]$/i.test(token)) {
+      if (/^\/s$/i.test(token)) recursive = true;
+    } else if (/^-[rf]*r[rf]*$/i.test(token) || isRecurseFlag(flag)) {
+      recursive = true;
+    } else if (isPathFlag(flag)) {
       const value = colon ? colon[2] : rawArgs[(index += 1)];
       if (value === undefined) continue;
       if (PS_UNREADABLE.test(value)) unreadable = true;
       else collect(value, targets);
     } else if (PS_VALUED_FLAG.test(flag)) {
       if (!colon) index += 1;
-    } else if (!rawArgs[index].startsWith("-")) {
-      if (PS_UNREADABLE.test(rawArgs[index])) unreadable = true;
-      else collect(rawArgs[index], targets);
+    } else if (!token.startsWith("-")) {
+      if (PS_UNREADABLE.test(token)) unreadable = true;
+      else collect(token, targets);
     }
   }
   return { recursive, targets, unreadable };

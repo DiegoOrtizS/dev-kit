@@ -47,28 +47,80 @@ export function isWholeDirectorySegment(segment) {
   return /^[*?.]+$/.test(normalizeGlobs(segment).replace(BRACKET, "?"));
 }
 
-function bracketClass(bracket) {
-  const body = bracket.slice(1, -1).replace(/\\/g, "\\\\");
-  return `[${body.startsWith("!") ? `^${body.slice(1)}` : body}]`;
+function matchClass(token, char) {
+  if (char === "/" && !token.cross) return false;
+  const body = token.cls;
+  let hit = false;
+  for (let i = 0; i < body.length;) {
+    if (body[i + 1] === "-" && i + 2 < body.length) {
+      if (char >= body[i] && char <= body[i + 2]) hit = true;
+      i += 3;
+    } else {
+      if (char === body[i]) hit = true;
+      i += 1;
+    }
+  }
+  return token.negated ? !hit : hit;
 }
 
-export function globRegExp(pattern, { crossSlash = false } = {}) {
-  const path = pattern.replace(/\*{2,}/g, "**");
-  const any = crossSlash ? ".*" : "[^/]*";
-  const one = crossSlash ? "." : "[^/]";
-  let source = "";
-  for (let index = 0; index < path.length; index += 1) {
-    const char = path[index];
-    const bracket = char === "[" ? BRACKET_ONE.exec(path.slice(index)) : null;
-    if (bracket !== null) {
-      source += POSIX_CLASS.test(bracket[0]) ? one : bracketClass(bracket[0]);
-      index += bracket[0].length - 1;
-    } else if (char === "*" && path[index + 1] === "*") {
-      source += ".*";
-      index += 1;
-    } else if (char === "*") source += any;
-    else if (char === "?") source += one;
-    else source += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+function tokenizeGlob(pattern, crossSlash) {
+  const tokens = [];
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      let cross = crossSlash;
+      while (pattern[index + 1] === "*") {
+        cross = true;
+        index += 1;
+      }
+      tokens.push({ star: true, cross });
+    } else if (char === "?") {
+      tokens.push({ one: true, cross: crossSlash });
+    } else {
+      const bracket = char === "[" ? BRACKET_ONE.exec(pattern.slice(index)) : null;
+      if (bracket === null) {
+        tokens.push({ lit: char });
+      } else if (POSIX_CLASS.test(bracket[0])) {
+        tokens.push({ one: true, cross: crossSlash });
+        index += bracket[0].length - 1;
+      } else {
+        const inner = bracket[0].slice(1, -1);
+        const negated = inner.startsWith("!") || inner.startsWith("^");
+        tokens.push({ cls: negated ? inner.slice(1) : inner, negated, cross: crossSlash });
+        index += bracket[0].length - 1;
+      }
+    }
   }
-  return new RegExp(`^${source}$`);
+  return tokens;
+}
+
+export function globMatch(pattern, text, { crossSlash = false } = {}) {
+  const tokens = tokenizeGlob(pattern, crossSlash);
+  const length = text.length;
+  let reachable = new Array(length + 1).fill(false);
+  reachable[0] = true;
+  for (const token of tokens) {
+    const next = new Array(length + 1).fill(false);
+    for (let position = 0; position <= length; position += 1) {
+      if (!reachable[position]) continue;
+      if (token.star) {
+        next[position] = true;
+        for (let end = position; end < length; end += 1) {
+          if (!token.cross && text[end] === "/") break;
+          next[end + 1] = true;
+        }
+      } else if (position < length) {
+        const char = text[position];
+        const ok =
+          token.lit !== undefined
+            ? char === token.lit
+            : token.one
+              ? token.cross || char !== "/"
+              : matchClass(token, char);
+        if (ok) next[position + 1] = true;
+      }
+    }
+    reachable = next;
+  }
+  return reachable[length];
 }

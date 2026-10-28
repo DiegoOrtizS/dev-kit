@@ -6,7 +6,7 @@ import {
   coversOwnLimits,
   relativeToRepo,
 } from "./env-files.mjs";
-import { globRegExp, hasGlob } from "./globs.mjs";
+import { globMatch, hasGlob } from "./globs.mjs";
 import { isLongOption, isShortFlagCluster, parseArguments } from "./options.mjs";
 import { ALLOW, ask, deny, firstBlock } from "./verdict.mjs";
 
@@ -46,8 +46,9 @@ function isStagedOnly(flags) {
 function checkPathspec(path, context) {
   if (hasGlob(path)) {
     const fromRoot = relativeToRepo(path, context);
-    const pattern = fromRoot === null ? null : globRegExp(fromRoot, { crossSlash: true });
-    return pattern !== null && OWN_LIMITS_SAMPLES.some((sample) => pattern.test(sample)) ? OWN_LIMITS_ASK : ALLOW;
+    const matches =
+      fromRoot !== null && OWN_LIMITS_SAMPLES.some((sample) => globMatch(fromRoot, sample, { crossSlash: true }));
+    return matches ? OWN_LIMITS_ASK : ALLOW;
   }
   const written = checkWrittenPaths([path], context);
   if (written.block || written.ask) return written;
