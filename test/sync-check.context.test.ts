@@ -11,7 +11,7 @@ import {
   syncProblems,
 } from "../src/guardrails/sync-check.mjs";
 
-const kitRoot = path.resolve(__dirname, "..");
+const kitRoot = path.resolve(import.meta.dirname, "..");
 let repo: string;
 
 function writeSettings(env: Record<string, unknown>) {

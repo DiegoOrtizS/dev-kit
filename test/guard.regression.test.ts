@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateToolCall } from "../src/guard/guard.mjs";
-import { everydayCases, protectedCases } from "./guard.regression.fixture.js";
+import { everydayCases, protectedCases } from "./guard.regression.fixture.ts";
 
 const repoRoot = "C:/Users/Diego/repos/tcg-store";
 const io = { gitAlias: (name: string) => (name === "nuke" ? "reset --hard" : null), readTextFile: () => null };

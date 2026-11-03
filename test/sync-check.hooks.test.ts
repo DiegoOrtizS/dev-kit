@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkHookMatchers } from "../src/guardrails/sync-hooks.mjs";
 
-const kitRoot = path.resolve(__dirname, "..");
+const kitRoot = path.resolve(import.meta.dirname, "..");
 const guardHook = {
   type: "command",
   command: 'node "$(git rev-parse --show-toplevel)/tools/claude-hooks/guard.mjs" || exit 2',

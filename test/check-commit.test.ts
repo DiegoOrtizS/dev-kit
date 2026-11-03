@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { commitProblems } from "../src/guardrails/commit-message.mjs";
 
-const binPath = path.resolve(__dirname, "..", "bin", "dev-kit.mjs");
+const binPath = path.resolve(import.meta.dirname, "..", "bin", "dev-kit.mjs");
 const gitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
 let repo: string;
 
