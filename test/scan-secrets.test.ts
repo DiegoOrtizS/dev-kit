@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const binPath = path.resolve(__dirname, "..", "bin", "dev-kit.mjs");
+const binPath = path.resolve(import.meta.dirname, "..", "bin", "dev-kit.mjs");
 const githubToken = `ghp_${"a1B2c3D4e5F6g7H8i9J0".repeat(2)}`;
 
 let repo: string;

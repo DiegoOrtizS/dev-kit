@@ -5,11 +5,13 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     environment: "node",
     testTimeout: 20_000,
+    experimental: { viteModuleRunner: false },
     coverage: {
       provider: "v8",
+      autoAttachSubprocess: true,
       include: ["src/**/*.mjs", "bin/**/*.mjs", "shim/**/*.mjs"],
       reporter: ["text-summary"],
-      thresholds: { statements: 88, branches: 88, functions: 89, lines: 88 },
+      thresholds: { statements: 94, branches: 91, functions: 95, lines: 94 },
     },
   },
 });

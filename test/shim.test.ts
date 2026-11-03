@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const kitRoot = path.resolve(__dirname, "..");
+const kitRoot = path.resolve(import.meta.dirname, "..");
 let consumer: string;
 
 function installShim() {

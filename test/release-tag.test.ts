@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { normalizeConfig } from "../src/config.mjs";
 import { releasePlan, releaseTag } from "../src/release/release-tag.mjs";
 
-const binPath = path.resolve(__dirname, "..", "bin", "dev-kit.mjs");
+const binPath = path.resolve(import.meta.dirname, "..", "bin", "dev-kit.mjs");
 const gitEnv = Object.entries(process.env).filter(([key]) => key.startsWith("GIT_"));
 let root: string;
 let repo: string;
